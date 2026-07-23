@@ -1,7 +1,7 @@
 {
-  "name": "agentqa-dev",
+  "name": "agentqa",
   "interface": {
-    "displayName": "AgentQA Dev"
+    "displayName": "AgentQA"
   },
   "plugins": [
     {

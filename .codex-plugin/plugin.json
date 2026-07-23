@@ -7,8 +7,8 @@
     "email": "nguyenanhtuan25122001@gmail.com",
     "url": "https://github.com/TunNguyen-25"
   },
-  "homepage": "https://github.com/TunNguyen-25/AgentQA-iOS",
-  "repository": "https://github.com/TunNguyen-25/AgentQA-iOS",
+  "homepage": "https://github.com/TunNguyen-25/AgentQA",
+  "repository": "https://github.com/TunNguyen-25/AgentQA",
   "license": "MIT",
   "keywords": [
     "appium",
@@ -37,7 +37,7 @@
       "Set up this repo for agent-driven Appium UI tests.",
       "Write a UI test: logging in with a valid account lands on the home tab."
     ],
-    "websiteURL": "https://github.com/TunNguyen-25/AgentQA-iOS",
+    "websiteURL": "https://github.com/TunNguyen-25/AgentQA",
     "brandColor": "#10B981"
   }
 }

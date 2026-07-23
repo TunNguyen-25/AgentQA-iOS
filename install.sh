@@ -1,13 +1,13 @@
 #!/bin/bash
 # agentqa installer — place the skill into your harness's skills directory.
 #
-# One-liner:  curl -fsSL https://raw.githubusercontent.com/TunNguyen-25/AgentQA-iOS/main/install.sh | bash
-# Manual:     git clone https://github.com/TunNguyen-25/AgentQA-iOS.git && cd AgentQA-iOS && ./install.sh
+# One-liner:  curl -fsSL https://raw.githubusercontent.com/TunNguyen-25/AgentQA/main/install.sh | bash
+# Manual:     git clone https://github.com/TunNguyen-25/AgentQA.git && cd AgentQA && ./install.sh
 #
 # Flags: --global | --project (default) | --ref <tag|branch> | --harness <id> | --setup | -h
 set -uo pipefail
 
-REPO_URL="https://github.com/TunNguyen-25/AgentQA-iOS.git"
+REPO_URL="https://github.com/TunNguyen-25/AgentQA.git"
 INIT_PAYLOAD="SKILL.md references scripts assets"
 WRITE_TEST_PAYLOAD="SKILL.md references scripts assets"
 

@@ -1,5 +1,5 @@
 {
-  "name": "agentqa-dev",
+  "name": "agentqa",
   "description": "Agent-driven mobile UI test automation with Appium, for iOS and Android — two skills: agentqa-init (toolchain + project setup) and agentqa-write-test (idea to a green Appium test, with behavioral memory).",
   "owner": {
     "name": "Nguyễn Anh Tuấn",

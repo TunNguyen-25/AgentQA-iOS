@@ -33,10 +33,6 @@ needs macOS with Xcode + an iOS simulator; Android needs the Android SDK (`adb`,
 an emulator or device) + a JDK (macOS or Linux). Pinned tool versions live in
 [`scripts/common.sh`](skills/agentqa-init/scripts/common.sh).
 
-> **Note:** the GitHub repo is still named `AgentQA-iOS` (its URL, and the install
-> commands below, are unchanged). The skills themselves are cross-platform;
-> renaming the repo is optional and separate.
-
 ---
 
 ## Install
@@ -46,14 +42,14 @@ install — both `agentqa-init` and `agentqa-write-test` are auto-discovered fro
 [`skills/`](skills/) via the [`.claude-plugin/`](.claude-plugin/) manifest:
 
 ```bash
-claude plugin marketplace add https://github.com/TunNguyen-25/AgentQA-iOS
-claude plugin install agentqa@agentqa-dev
+claude plugin marketplace add https://github.com/TunNguyen-25/AgentQA
+claude plugin install agentqa@agentqa
 ```
 
 Default scope is `user` (this machine only); add `--scope project` to commit the
 choice to `.claude/settings.json` and share it with your team. Update with
-`claude plugin update agentqa@agentqa-dev`; remove with `claude plugin uninstall
-agentqa@agentqa-dev`.
+`claude plugin update agentqa@agentqa`; remove with `claude plugin uninstall
+agentqa@agentqa`.
 
 **Codex / Cursor (plugin manifest):** the repo also ships per-harness plugin
 manifests that point at the same [`skills/`](skills/) folder —
@@ -71,7 +67,7 @@ directory.
 **One-liner** (run from inside your app repo — installs into `.claude/skills/`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TunNguyen-25/AgentQA-iOS/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/TunNguyen-25/AgentQA/main/install.sh | bash
 ```
 
 To pass flags through the pipe, use `bash -s --`, e.g. `curl -fsSL <url> | bash -s -- --global`.
@@ -79,8 +75,8 @@ To pass flags through the pipe, use `bash -s --`, e.g. `curl -fsSL <url> | bash 
 **Manual** (inspect first):
 
 ```bash
-git clone https://github.com/TunNguyen-25/AgentQA-iOS.git
-cd AgentQA-iOS && ./install.sh
+git clone https://github.com/TunNguyen-25/AgentQA.git
+cd AgentQA && ./install.sh
 ```
 
 The installer detects your harness and copies both skill folders into that
