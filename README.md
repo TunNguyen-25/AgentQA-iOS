@@ -55,8 +55,18 @@ choice to `.claude/settings.json` and share it with your team. Update with
 `claude plugin update agentqa@agentqa-dev`; remove with `claude plugin uninstall
 agentqa@agentqa-dev`.
 
-**Other harnesses (or no `claude` CLI) — `install.sh`:** a raw-copy installer that
-places the skill folders directly into your harness's skills directory.
+**Codex / Cursor (plugin manifest):** the repo also ships per-harness plugin
+manifests that point at the same [`skills/`](skills/) folder —
+[`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) and
+[`.cursor-plugin/plugin.json`](.cursor-plugin/plugin.json) (the same convention as
+[`.claude-plugin/`](.claude-plugin/), mirroring
+[obra/superpowers](https://github.com/obra/superpowers)). Install the repo through
+the harness's own plugin flow, or use `install.sh` below — for Codex it raw-copies
+the skills into `.agents/skills/`, the Agent-Skills path Codex reads.
+
+**Other harnesses (or no `claude`/plugin flow) — `install.sh`:** a raw-copy
+installer that places the skill folders directly into your harness's skills
+directory.
 
 **One-liner** (run from inside your app repo — installs into `.claude/skills/`):
 
@@ -84,10 +94,15 @@ harness's skills directory. Flags:
 | `--harness <id>` | override harness detection (or set `AGENTQA_HARNESS`) |
 | `--setup` | also run the toolchain setup after installing (default: no) |
 
-**Harness support:** Claude Code supports both the native marketplace install above
-and `install.sh`. For other harnesses, `install.sh` prints where to place the
-`agentqa-init/` and `agentqa-write-test/` folders; native per-harness marketplace
-manifests (`.agents/plugins/`, etc.) are planned.
+**Harness support:** Claude Code installs via the native marketplace or
+`install.sh`. Codex and Cursor have per-harness plugin manifests
+(`.codex-plugin/`, `.cursor-plugin/`) pointing at the shared `skills/`, and Codex
+is also a native `install.sh --harness codex` target (raw-copy into
+`.agents/skills/`). For any other harness, `install.sh` prints where to place the
+`agentqa-init/` and `agentqa-write-test/` folders. Because every skill is plain
+[Agent Skills](https://agentskills.io) `SKILL.md`, the same `skills/` works across
+harnesses — only the install path differs. Per-harness plugin marketplaces are
+still maturing, so `install.sh` stays the guaranteed path.
 
 ### First run
 
@@ -274,6 +289,8 @@ across them.
 
 ```text
 .claude-plugin/           # plugin.json + marketplace.json (Claude Code plugin manifest)
+.codex-plugin/            # plugin.json (Codex plugin manifest → ./skills/)
+.cursor-plugin/           # plugin.json (Cursor plugin manifest → ./skills/)
 .agents/plugins/          # marketplace.json (generic agents-plugin manifest)
 skills/
 ├── agentqa-init/         # setup + init

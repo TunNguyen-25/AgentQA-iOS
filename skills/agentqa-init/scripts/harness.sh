@@ -27,9 +27,15 @@ harness_mcp_method() {
 # Skills-dir subpath (relative to repo root for --project, or $HOME for --global)
 # where the agentqa/ folder is placed. Empty => not a known raw-skill harness
 # (installer prints a manual/marketplace note). VERIFY non-claude paths upstream.
+#
+# codex reads the Agent Skills open standard from `.agents/skills` (repo) and
+# `~/.agents/skills` (user) — the same subpath serves both scopes here, matching
+# claude's `.claude/skills`. Other agentskills.io-compatible harnesses may read
+# the same `.agents/skills` path; wire them here as their paths are confirmed.
 harness_skills_dir() {
   case "${1:-}" in
     claude) echo ".claude/skills";;
+    codex)  echo ".agents/skills";;
     *)      echo "";;
   esac
 }
@@ -37,6 +43,7 @@ harness_skills_dir() {
 # Best-effort auto-detect; prefer Claude Code.
 detect_harness() {
   if command -v claude >/dev/null 2>&1; then echo claude; return; fi
+  command -v codex   >/dev/null 2>&1 && { echo codex; return; }
   command -v agy     >/dev/null 2>&1 && { echo antigravity; return; }
   command -v droid   >/dev/null 2>&1 && { echo droid; return; }
   command -v copilot >/dev/null 2>&1 && { echo copilot; return; }

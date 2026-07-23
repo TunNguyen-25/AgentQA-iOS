@@ -62,8 +62,28 @@ case "$method" in
     ;;
   file:*)
     dest="${method#file:}"
-    warn "Point $HARNESS at the MCP servers by importing this manifest into: $dest"
-    echo "---- $MANIFEST ----"; cat "$MANIFEST"; echo "----"
+    if [ "$HARNESS" = codex ]; then
+      # Codex config is TOML, not JSON — emit ready-to-paste [mcp_servers.*] tables.
+      warn "Add these MCP servers to $dest (Codex uses TOML [mcp_servers.*] tables):"
+      echo "---- ~/.codex/config.toml ----"
+      cat <<EOF
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]
+
+[mcp_servers."basic-memory"]
+command = "basic-memory"
+args = ["--project=$BM_PROJECT", "mcp"]
+
+[mcp_servers.appium]
+command = "npx"
+args = ["appium-mcp@${APPIUM_MCP_PIN}"]
+EOF
+      echo "----"
+    else
+      warn "Point $HARNESS at the MCP servers by importing this manifest into: $dest"
+      echo "---- $MANIFEST ----"; cat "$MANIFEST"; echo "----"
+    fi
     ;;
   print|*)
     warn "Register these MCP servers with $HARNESS per its docs (manifest below):"
