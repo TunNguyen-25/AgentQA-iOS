@@ -1,0 +1,20 @@
+{
+  "name": "agentqa-dev",
+  "description": "Agent-driven mobile UI test automation with Appium — two skills: agentqa-init (toolchain + project setup) and agentqa-write-test (idea to a green Appium test, with behavioral memory).",
+  "owner": {
+    "name": "Nguyễn Anh Tuấn",
+    "email": "nguyenanhtuan25122001@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "agentqa",
+      "description": "Agent-driven mobile UI test automation with Appium — two skills: agentqa-init (toolchain + project setup) and agentqa-write-test (idea to a green Appium test, with behavioral memory).",
+      "version": "1.0.0",
+      "source": "./",
+      "author": {
+        "name": "Nguyễn Anh Tuấn",
+        "email": "nguyenanhtuan25122001@gmail.com"
+      }
+    }
+  ]
+}

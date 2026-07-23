@@ -1,0 +1,19 @@
+{
+  "name": "agentqa",
+  "description": "Agent-driven mobile UI test automation with Appium — two skills: agentqa-init (toolchain + project setup) and agentqa-write-test (idea to a green Appium test, with behavioral memory).",
+  "version": "1.0.0",
+  "author": {
+    "name": "Nguyễn Anh Tuấn",
+    "email": "nguyenanhtuan25122001@gmail.com"
+  },
+  "homepage": "https://github.com/TunNguyen-25/AgentQA-iOS",
+  "repository": "https://github.com/TunNguyen-25/AgentQA-iOS",
+  "license": "MIT",
+  "keywords": [
+    "appium",
+    "ios",
+    "ui-testing",
+    "mobile",
+    "test-automation"
+  ]
+}

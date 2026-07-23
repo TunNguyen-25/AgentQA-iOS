@@ -1,0 +1,29 @@
+# Project configuration for the agentqa skill (.agentqa/config.yml)
+# Facts about THIS project that the generic skill must not hardcode.
+
+platform: ios
+bundle_id: com.example.app          # app under test
+test_dir: AutomationTests           # relative to repo root
+
+build:
+  policy: human                     # human = agent stops and asks the user to
+                                    #   build & install (use when CLI builds are
+                                    #   slow or need signing); agent = agent builds
+  note: ""                          # why, e.g. "git-loaded packages make CLI builds too slow"
+
+reset_app_data: always              # always (DEFAULT) = wipe the app's local data
+                                    #   container (Documents/Library/tmp) + privacy
+                                    #   grants before every launch, so each run and
+                                    #   each explore session starts clean;
+                                    #   never = keep local state between launches
+                                    # The installed binary is never removed (a human
+                                    # -installed build survives); the simulator-wide
+                                    # keychain is NOT wiped.
+
+credentials:
+  username_env: APP_TEST_USERNAME   # env var NAMES only — never values
+
+identifier_convention: screen_element_type   # e.g. login_phone_field, home_profile_button
+
+appium:
+  port: 4723

@@ -1,0 +1,20 @@
+{
+  "name": "agentqa-dev",
+  "interface": {
+    "displayName": "AgentQA Dev"
+  },
+  "plugins": [
+    {
+      "name": "agentqa",
+      "source": {
+        "source": "url",
+        "url": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
