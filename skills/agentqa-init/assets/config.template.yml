@@ -1,29 +1,49 @@
 # Project configuration for the agentqa skill (.agentqa/config.yml)
 # Facts about THIS project that the generic skill must not hardcode.
 
-platform: ios
-bundle_id: com.example.app          # app under test
+platform: ios                       # ios | android — selects the driver, the
+                                    #   device tooling, the data-reset mechanism,
+                                    #   and the accessibility-identifier strategy
+
+# --- App under test ---------------------------------------------------------
+# iOS (platform: ios): set bundle_id.
+bundle_id: com.example.app          # xcrun simctl listapps booted
+# Android (platform: android): set app_package + app_activity instead, and leave
+# bundle_id blank. Resolve the launcher activity with:
+#   adb shell cmd package resolve-activity --brief <package> | tail -1
+# app_package: com.example.app
+# app_activity: com.example.app.MainActivity
+
 test_dir: AutomationTests           # relative to repo root
 
 build:
   policy: human                     # human = agent stops and asks the user to
                                     #   build & install (use when CLI builds are
-                                    #   slow or need signing); agent = agent builds
+                                    #   slow or need signing — common on iOS);
+                                    #   agent = agent builds (often fine for an
+                                    #   Android debug APK: ./gradlew installDebug)
   note: ""                          # why, e.g. "git-loaded packages make CLI builds too slow"
 
-reset_app_data: always              # always (DEFAULT) = wipe the app's local data
-                                    #   container (Documents/Library/tmp) + privacy
-                                    #   grants before every launch, so each run and
-                                    #   each explore session starts clean;
-                                    #   never = keep local state between launches
-                                    # The installed binary is never removed (a human
-                                    # -installed build survives); the simulator-wide
-                                    # keychain is NOT wiped.
+reset_app_data: always              # always (DEFAULT) = start every launch from a
+                                    #   clean state. iOS: wipe the data container
+                                    #   (Documents/Library/tmp) + privacy grants.
+                                    #   Android: `adb shell pm clear` (clears data
+                                    #   + cache, revokes runtime permissions).
+                                    #   never = keep local state between launches.
+                                    # The installed binary is never removed (a
+                                    # human-installed build survives); the shared
+                                    # keychain / keystore is NOT wiped.
 
 credentials:
   username_env: APP_TEST_USERNAME   # env var NAMES only — never values
 
 identifier_convention: screen_element_type   # e.g. login_phone_field, home_profile_button
+                                    # The logical name convention is shared; the
+                                    # mechanism differs by platform — iOS sets
+                                    # accessibilityIdentifier, Android sets a
+                                    # contentDescription (or a testTag exposed as
+                                    # resource-id). See agentqa-write-test's
+                                    # references/android.md.
 
 appium:
   port: 4723

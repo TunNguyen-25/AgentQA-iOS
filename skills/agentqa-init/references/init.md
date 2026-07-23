@@ -5,23 +5,38 @@ test suite. Idempotent — if pieces exist, keep them and fill only the gaps.
 
 ## 1. Gather the facts (ask the user; don't guess)
 
-- **Bundle id** of the app under test (for iOS you can list installed apps on
-  a booted simulator: `xcrun simctl listapps booted`).
+- **Platform**: `ios` or `android`. If unsure, infer from the repo (an
+  `.xcodeproj`/`Package.swift` → iOS; a `build.gradle`/`AndroidManifest.xml` →
+  Android) and confirm. It selects the driver, device tooling, reset mechanism,
+  and identifier strategy — everything below branches on it.
+- **App under test:**
+  - iOS → **bundle id** (list installed apps on a booted simulator:
+    `xcrun simctl listapps booted`).
+  - Android → **app package** + **launcher activity**. List packages with
+    `adb shell pm list packages`; resolve the activity with
+    `adb shell cmd package resolve-activity --brief <package> | tail -1`. Leave
+    `bundle_id` blank and set `app_package`/`app_activity` instead.
 - **Test directory** name (default `AutomationTests`).
 - **Build policy**: `human` (agent stops and asks the user to build & install
-  — right choice when CLI builds are slow or signing is involved) or `agent`.
+  — right choice when CLI builds are slow or signing is involved, common on iOS)
+  or `agent` (often fine for an Android debug APK: `./gradlew installDebug`).
 - **Reset local app data on every launch?** `always` (**default** — recommend it;
-  every test session and every explore launch starts from a wiped data container,
-  so runs are deterministic and one test can't inherit another's state) or `never`
-  (keep state between launches — pick it only when re-establishing state is
-  expensive, e.g. a manual login the tests can't redo). The binary is never
-  uninstalled, so a human-installed build survives; the keychain is
-  simulator-wide and is not wiped either.
+  every test session and every explore launch starts clean, so runs are
+  deterministic and one test can't inherit another's state) or `never` (keep
+  state between launches — pick it only when re-establishing state is expensive,
+  e.g. a manual login the tests can't redo). The mechanism follows the platform:
+  iOS wipes the data container + privacy grants; Android runs
+  `adb shell pm clear` (data + cache + revoked runtime permissions). Either way
+  the **binary is never uninstalled** (a human-installed build survives) and the
+  shared keychain / keystore is not wiped.
 - **Credential env var names** the tests will read (e.g. `APP_TEST_USERNAME`).
   Values are never stored anywhere — only the names.
 - **Identifier convention** (recommend `screen_element_type`, lowercase
   snake_case: `login_phone_field`, `home_profile_button`; suffixes `field`,
-  `button`, `label`, `alert`, `tab`, `cell`).
+  `button`, `label`, `alert`, `tab`, `cell`). The logical convention is shared
+  across platforms; the **mechanism** differs (iOS `accessibilityIdentifier`;
+  Android `contentDescription` or a `testTag` exposed as `resource-id`) and is
+  the `agentqa-write-test` skill's job — see its `references/android.md`.
 
 ## 2. Write the config
 
@@ -33,12 +48,15 @@ Copy [assets/config.template.yml](../assets/config.template.yml) to
 Copy the files from [assets/scaffold/](../assets/scaffold/) into the test
 directory:
 
-- `conftest.py` — Appium driver fixture: auto-detects the booted simulator,
-  reads the bundle id from the config (or `AGENTQA_BUNDLE_ID`), attaches
-  with `noReset`, wipes the app's data container when `reset_app_data` is
-  `always` (config, or `AGENTQA_RESET_APP_DATA` to override per run),
-  cold-starts the app, and saves page_source + screenshot automatically on any
-  test failure.
+- `conftest.py` — Appium driver fixture, platform-dispatched on `platform:`:
+  iOS uses the XCUITest driver + a booted simulator (bundle id from the config or
+  `AGENTQA_BUNDLE_ID`); Android uses the UiAutomator2 driver + a connected
+  device/emulator (`app_package`/`app_activity` from the config or
+  `AGENTQA_APP_PACKAGE`/`AGENTQA_APP_ACTIVITY`, `ANDROID_SERIAL` to pick among
+  several). It attaches with `noReset`, wipes app data when `reset_app_data` is
+  `always` (config, or `AGENTQA_RESET_APP_DATA` to override per run) — a `simctl`
+  container wipe on iOS, `adb shell pm clear` on Android — cold-starts the app,
+  and saves page_source + a screenshot automatically on any test failure.
 - `requirements.txt`, `pytest.ini`, `.gitignore` — pinned deps, defaults.
 - Create empty `pages/` (+ `__init__.py`), `tests/`, `notes/` directories.
 
@@ -82,13 +100,15 @@ structured facts. Do not duplicate facts across the two.
 the same mechanism, this skill's `scripts/reset-app-data.sh`:
 
 ```bash
-scripts/reset-app-data.sh          # bundle id from .agentqa/config.yml
+scripts/reset-app-data.sh          # platform + app id from .agentqa/config.yml
 ```
 
-It terminates the app, empties its data container (`Documents/`, `Library/`
-including NSUserDefaults, `tmp/`) and resets its privacy grants — without
-uninstalling the binary, so a `build.policy: human` build stays installed. When
-`reset_app_data: never`, nobody calls it.
+It reads `platform:` from the config and does the right thing: on iOS it
+terminates the app, empties its data container (`Documents/`, `Library/`
+including NSUserDefaults, `tmp/`) and resets its privacy grants; on Android it
+runs `adb shell pm clear <app_package>` (data + cache + revoked runtime
+permissions). Neither uninstalls the binary, so a `build.policy: human` build
+stays installed. When `reset_app_data: never`, nobody calls it.
 
 ## 6. Verify
 

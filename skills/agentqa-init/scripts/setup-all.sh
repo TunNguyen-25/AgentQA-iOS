@@ -14,9 +14,13 @@ source ./common.sh
 parse_check_flag "$@"
 MODE_FLAG=""; [ "$CHECK_ONLY" = 1 ] && MODE_FLAG="--check"
 parse_harness_flag "$@"
+parse_platform_flag "$@"
 resolve_harness || exit 1
-echo "Target harness: $HARNESS"
+SCOPE="$(resolve_platform_scope)"
+echo "Target harness:  $HARNESS"
+echo "Platform scope:  $SCOPE  (override with --platform ios|android|both)"
 HARNESS_FLAG="--harness $HARNESS"
+PLATFORM_FLAG="--platform $SCOPE"
 
 declare -a NAMES RESULTS
 
@@ -32,27 +36,35 @@ run_step() { # run_step <name> <command...>
 }
 
 # --- Preflight: things this script can check but not install for you ---
+# iOS checks only fail the build when iOS is in scope; on an Android-only
+# machine they downgrade to a skip note so the run still goes green.
 preflight() {
   local rc=0
-  if xcode-select -p >/dev/null 2>&1; then
-    ok "Xcode command line tools ($(xcode-select -p))"
+  if platform_targets_ios "$SCOPE"; then
+    if xcode-select -p >/dev/null 2>&1; then
+      ok "Xcode command line tools ($(xcode-select -p))"
+    else
+      err "Xcode not configured — install Xcode from the App Store, then: xcode-select --install"
+      rc=1
+    fi
+    if command -v xcrun >/dev/null 2>&1 && xcrun simctl list devices >/dev/null 2>&1; then
+      ok "iOS simulators available"
+    else
+      err "simctl unavailable — open Xcode once and install an iOS simulator runtime"
+      rc=1
+    fi
   else
-    err "Xcode not configured — install Xcode from the App Store, then: xcode-select --install"
-    rc=1
-  fi
-  if command -v xcrun >/dev/null 2>&1 && xcrun simctl list devices >/dev/null 2>&1; then
-    ok "iOS simulators available"
-  else
-    err "simctl unavailable — open Xcode once and install an iOS simulator runtime"
-    rc=1
+    ok "iOS preflight skipped (platform scope: $SCOPE)"
   fi
   require_cmd node "brew install node" || rc=1
   return $rc
 }
 
 run_step "Preflight (Xcode, simulators, Node)" preflight
+platform_targets_android "$SCOPE" && \
+  run_step "Android SDK (adb, emulator, JDK)"  ./install-android-sdk.sh $MODE_FLAG $PLATFORM_FLAG
 run_step "Appium MCP server"                   ./install-appium-mcp.sh $MODE_FLAG
-run_step "Appium + xcuitest driver"            ./install-appium.sh $MODE_FLAG
+run_step "Appium + platform driver(s)"         ./install-appium.sh $MODE_FLAG $PLATFORM_FLAG
 run_step "agent-device"                        ./install-agent-device.sh $MODE_FLAG
 run_step "CodeGraph CLI"                       ./install-codegraph.sh $MODE_FLAG
 run_step "basic-memory"                        ./install-basic-memory.sh $MODE_FLAG
@@ -77,5 +89,10 @@ if [ "$FAILED" = 1 ]; then
   exit 1
 fi
 echo ""
-ok "All components ready. Next: boot a simulator, install the app build, start 'appium', then run '/agentqa-write-test'."
+case "$SCOPE" in
+  android) DEVICE_HINT="boot an Android emulator (or attach a device)";;
+  both)    DEVICE_HINT="boot a simulator/emulator (or attach a device)";;
+  *)       DEVICE_HINT="boot a simulator";;
+esac
+ok "All components ready. Next: $DEVICE_HINT, install the app build, start 'appium', then run '/agentqa-write-test'."
 [ "$HARNESS" != claude ] && echo "  (On $HARNESS: MCP servers aren't auto-registered — see the printed manifest steps above / .agentqa/mcp.json.)"

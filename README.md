@@ -1,11 +1,17 @@
-# agentqa — agent-driven mobile UI test automation skills
+# AgentQA — agent-driven mobile UI test automation skills
 
 Two [Agent Skills](https://agentskills.io) that let an AI coding agent **set up,
-write, and run Appium UI tests** for an iOS app — by exploring the *real* running
-app, adding accessibility identifiers additively, remembering what it learns, and
-keeping humans at the build and review checkpoints.
-[`agentqa-init`](skills/agentqa-init/) sets the machine and repo up, and
-[`agentqa-write-test`](skills/agentqa-write-test/) does the testing work.
+write, and run Appium UI tests** for a mobile app — **iOS or Android** — by
+exploring the *real* running app, adding accessibility identifiers additively,
+remembering what it learns, and keeping humans at the build and review
+checkpoints. [`agentqa-init`](skills/agentqa-init/) sets the machine and repo up,
+and [`agentqa-write-test`](skills/agentqa-write-test/) does the testing work.
+
+One flow, two platforms: the same 0–9 flow, checkpoints, and memory model drive
+both, selected by a single `platform:` line in the config. iOS runs on the
+XCUITest driver (`simctl`, `accessibilityIdentifier`); Android on the UiAutomator2
+driver (`adb`, `contentDescription`/`resource-id`). The platform-specific
+mechanics live in [`references/android.md`](skills/agentqa-write-test/references/android.md).
 
 Two ideas make it work:
 
@@ -17,13 +23,19 @@ Two ideas make it work:
   signatures — is saved to `.agentqa/memory/` so repeat runs get faster and more
   reliable instead of starting cold.
 
-Project-agnostic by design: everything app-specific (bundle id, test dir, build
-policy, credential env-var names, identifier convention) lives in
+Project-agnostic by design: everything app-specific (platform, app id, test dir,
+build policy, credential env-var names, identifier convention) lives in
 `.agentqa/config.yml` inside *your* repo, created by `/agentqa-init init`. Nothing
 app-specific is ever hardcoded in a test, and credentials are never committed.
 
-**Requirements:** macOS with Xcode + an iOS simulator, Node.js, Python 3.9+.
-Pinned tool versions live in [`scripts/common.sh`](skills/agentqa-init/scripts/common.sh).
+**Requirements:** Node.js and Python 3.9+, plus the platform toolchain — iOS
+needs macOS with Xcode + an iOS simulator; Android needs the Android SDK (`adb`,
+an emulator or device) + a JDK (macOS or Linux). Pinned tool versions live in
+[`scripts/common.sh`](skills/agentqa-init/scripts/common.sh).
+
+> **Note:** the GitHub repo is still named `AgentQA-iOS` (its URL, and the install
+> commands below, are unchanged). The skills themselves are cross-platform;
+> renaming the repo is optional and separate.
 
 ---
 
@@ -125,18 +137,19 @@ so the skills still work (with less automation) when one is missing.
 
 | Tool | What it is | Why the skills use it |
 |---|---|---|
-| **Appium 2.x + XCUITest driver** | The mobile automation server + iOS driver (WebDriverAgent under the hood). | The actual engine your generated pytest tests drive the app through, and the source of `page_source` — the one source of truth. |
-| **agent-device** | A CLI that is the agent's "hands" on the simulator (`open`, `snapshot -i`, `press`/`fill --settle`, `screenshot`). | Lets the agent **explore the real app** before writing a test — walking the flow, reading the live view hierarchy, and seeing what actually renders (native vs. web). |
+| **Appium 2.x + the platform driver** | The mobile automation server + the driver for your platform: **XCUITest** for iOS (WebDriverAgent under the hood) or **UiAutomator2** for Android (`adb`). `setup` installs whichever the platform scope needs. | The actual engine your generated pytest tests drive the app through, and the source of `page_source` — the one source of truth. |
+| **agent-device** | A cross-platform CLI that is the agent's "hands" on the device (`open`, `snapshot -i`, `press`/`fill --settle`, `screenshot`) — drives iOS simulators and Android emulators/devices alike. | Lets the agent **explore the real app** before writing a test — walking the flow, reading the live view hierarchy, and seeing what actually renders (native vs. web). |
 | **CodeGraph** | A codebase index + query MCP (call chains, blast radius). |  Helps the agent map a flow to the screens/symbols in your source and see what a change touches — *before* it edits, so identifier additions stay surgical. |
 | **basic-memory** *(MCP)* | A local knowledge-graph server backed by plain Markdown files. | Indexes `.agentqa/memory/` so the agent can recall and semantically search what it has learned about your app (see [How the agent remembers](#how-the-agent-remembers)). |
 | **Appium MCP** (`appium-mcp`) | An MCP server that talks to a running Appium session. | First-class `page_source` and identifier-verification reads while writing/diagnosing a test, instead of shelling out. |
-| **Python venv + pytest** | The test harness (`conftest.py` fixture auto-attaches to the booted sim, saves `page_source` + a screenshot on any failure, and writes a per-run execution runbook + final screenshot to `artifacts/runbook/` on pass or fail). | Runs the tests and captures failure evidence for diagnosis. |
+| **Python venv + pytest** | The test harness (`conftest.py` fixture auto-attaches to the booted device — simulator or emulator — saves `page_source` + a screenshot on any failure, and writes a per-run execution runbook + final screenshot to `artifacts/runbook/` on pass or fail). | Runs the tests and captures failure evidence for diagnosis. |
 
 MCP servers (`codegraph`, `basic-memory`, `appium`) are defined once in a portable
 `.agentqa/mcp.json`; on Claude Code they auto-register, and on other harnesses
 setup prints where to import them. **Never run a CPU-heavy job (e.g. re-indexing
-CodeGraph) while simulator tests are running** — WebDriverAgent waits time out and
-produce phantom failures.
+CodeGraph) while device tests are running** — on iOS WebDriverAgent waits time
+out, and on Android a busy host slows the UiAutomator2 server; both surface as
+phantom failures.
 
 ---
 
@@ -155,7 +168,7 @@ Notes are plain Markdown (basic-memory-native), organized by type:
 | `flows/` | user flow | navigation path, **the assertion that matters**, edge cases, which steps are native vs. web |
 | `screens/` | screen | native-or-web, the **identifier map** (logical name → where it's set + when it was last verified), quirks (e.g. "submit button sits under the keyboard") |
 | `failures/` | phantom/flaky signature | symptom → cause → remedy; a shared library across flows |
-| `env.md` | (single file) | build-policy rationale, credential env-var names, simulator gotchas |
+| `env.md` | (single file) | build-policy rationale, credential env-var names, device/simulator gotchas |
 | `.session-requirement.md` | (ephemeral, per session) | Working layer — what you asked for this session: success criteria, failure criteria, blockers; gitignored, deleted when the session ends |
 | `.run-checkpoint.md` | (ephemeral, per run) | Working layer — the in-flight run's state across the build pause; gitignored, deleted on Capture |
 
@@ -210,9 +223,10 @@ rules below are what keep the generated tests trustworthy.
    config's convention and change **nothing** about behavior, layout, or logic —
    `git diff` on app code must show **zero deletions**.
 4. **You build; the agent verifies.** Under `build.policy: human` the agent stops
-   and asks you to build & install onto the booted simulator (right when CLI builds
-   are slow or signing is involved), then pulls `page_source` and confirms every
-   new identifier actually shows up before writing locators against it.
+   and asks you to build & install onto the booted device (right when CLI builds
+   are slow or signing is involved — common on iOS), then pulls `page_source` and
+   confirms every new identifier actually shows up before writing locators
+   against it.
 5. **Locators, honestly.** Your identifiers for app-owned UI; visible-label
    predicates only for UI you don't own (web views). Credentials come only from the
    env vars named in the config — never hardcoded, never committed.
@@ -233,16 +247,22 @@ escalated if it doesn't clear — rather than re-diagnosed from scratch every ti
 `/agentqa-init init` writes `.agentqa/config.yml` at your repo root. It is the single
 source of truth for project facts:
 
-- **bundle id** of the app under test
+- **platform** — `ios` or `android` (selects the driver, device tooling, reset
+  mechanism, and identifier strategy)
+- **app id** — iOS `bundle_id`, or Android `app_package` + `app_activity`
 - **test directory** (default `AutomationTests`)
 - **build policy** — `human` (agent hands off building) or `agent` (agent builds)
 - **reset policy** — `reset_app_data: always` (default) wipes the app's local data
   before every launch, so each test run and each exploration starts clean; `never`
-  keeps state between launches. The app is never uninstalled (a human-installed
-  build survives) and the simulator-wide keychain isn't wiped.
+  keeps state between launches. iOS clears the data container + privacy grants;
+  Android runs `adb shell pm clear` (data + cache + revoked permissions). Either
+  way the app is never uninstalled (a human-installed build survives) and the
+  shared keychain/keystore isn't wiped.
 - **credential env-var names** the tests read (values are never stored — only names)
 - **identifier convention** (recommended: `screen_element_type`, e.g.
-  `login_phone_field`, `home_profile_button`)
+  `login_phone_field`, `home_profile_button`) — the logical convention is shared;
+  the mechanism is per-platform (iOS `accessibilityIdentifier`, Android
+  `contentDescription`/`resource-id`)
 
 Config holds *structured facts*; `.agentqa/memory/` holds *narrative knowledge*;
 your `CLAUDE.md`/`AGENTS.md` just points at the memory. Facts are never duplicated
@@ -260,12 +280,14 @@ skills/
 │   ├── SKILL.md          # router: setup | init → reference file
 │   ├── references/       # setup.md, init.md
 │   ├── scripts/          # idempotent install/validate scripts (--check mode), harness table,
-│   │                     #   reset-app-data.sh (runtime helper, not part of setup)
-│   ├── assets/           # config template, test-suite scaffold, memory scaffold, MCP manifest
-│   └── tests/            # scaffold (runbook) tests
+│   │                     #   install-appium.sh (xcuitest/uiautomator2), install-android-sdk.sh,
+│   │                     #   reset-app-data.sh (platform-aware runtime helper, not part of setup)
+│   ├── assets/           # config template, test-suite scaffold (platform-dispatched conftest),
+│   │                     #   memory scaffold, MCP manifest
+│   └── tests/            # scaffold (conftest reset, runbook) tests
 └── agentqa-write-test/   # the test-time flow, self-contained
-    ├── SKILL.md          # the 0–9 flow + the green loop
-    ├── references/       # clarify.md (what to ask), memory-model.md (store schema)
+    ├── SKILL.md          # the 0–9 flow + the green loop (iOS inline, Android delta linked)
+    ├── references/       # clarify.md, memory-model.md (store schema), android.md (platform delta)
     ├── scripts/          # memory-write.py, memory-index.py
     └── tests/            # memory store tests
 agentqa-write-test-workspace/  # eval harness: mock app repo, PATH shims, graders (dev-only)

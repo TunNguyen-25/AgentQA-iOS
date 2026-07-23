@@ -1,10 +1,10 @@
 ---
 name: agentqa-write-test
-description: Turn a natural-language test-case idea into a reviewed, passing Appium (iOS/XCUITest) test — index and map the flow to code, pin what success, failure, and blockers look like with the user, explore the real app with agent-device until the whole flow is understood, add accessibility identifiers additively, verify them in the live hierarchy, then write the test and run it until green. Also owns the behavioral-memory store the tests are built from. Use when the user wants a UI test written, generated, updated, or run for a flow. Invoked as /agentqa-write-test <idea>.
+description: Turn a natural-language test-case idea into a reviewed, passing Appium test (iOS/XCUITest or Android/UiAutomator2) — index and map the flow to code, pin what success, failure, and blockers look like with the user, explore the real app with agent-device until the whole flow is understood, add accessibility identifiers additively, verify them in the live hierarchy, then write the test and run it until green. Also owns the behavioral-memory store the tests are built from. Use when the user wants a UI test written, generated, updated, or run for a flow. Invoked as /agentqa-write-test <idea>.
 license: MIT
-compatibility: macOS with Xcode and an iOS simulator; needs the toolchain from /agentqa-init setup and a project configured by /agentqa-init init
+compatibility: iOS (macOS + Xcode + a simulator) or Android (Android SDK + an emulator/device + a JDK); needs the toolchain from /agentqa-init setup and a project configured by /agentqa-init init
 metadata:
-  agentqa-write-test-version: "1.0.0"
+  agentqa-write-test-version: "1.1.0"
 ---
 
 # agentqa-write-test — idea → identifiers → Appium test
@@ -19,6 +19,20 @@ This skill is self-contained: the memory schema, the clarify checklist, and the
 memory scripts all live here. It never spawns sub-agents — every step,
 including failure diagnosis, runs inline in your own context.
 
+## Platform — iOS or Android
+
+`platform:` in `.agentqa/config.yml` selects the target. **The flow below (steps
+0–9), the checkpoints, the clarify questions, and the memory model are identical
+on both platforms** — what differs is a handful of concrete mechanics: the device
++ driver, the data reset, the accessibility-identifier mechanism, how system
+dialogs are handled, and the green-loop preconditions. This file's concrete
+commands are written for **iOS**; when `platform: android`, read
+**[references/android.md](references/android.md)** and use its equivalent
+wherever a step shows an iOS-specific command (`xcrun`/`simctl`, the app's
+`bundle_id`, `accessibilityIdentifier`). The app id is the `bundle_id` on iOS and
+the `app_package` on Android — `reset-app-data.sh` and `agent-device` resolve it
+from the config for you. Everything else you read here applies verbatim.
+
 ## Project configuration
 
 `.agentqa/config.yml` at the host repo root holds bundle id, test directory,
@@ -28,15 +42,17 @@ env vars named in the config.
 
 **Build policy (respect it strictly).** `build.policy` decides who builds:
 - `human` — stop after any app-code change and ask the user to build & install
-  onto the booted simulator; never run xcodebuild for the app.
+  onto the booted device; never run the app build yourself (`xcodebuild` on iOS,
+  `./gradlew` on Android).
 - `agent` — the agent may build/install itself.
 
 **Reset policy.** `reset_app_data` (default `always`) decides whether the app's
 local data is wiped before every launch. `conftest.py` handles it for pytest runs;
 for the `agent-device open` launches in step 3 you call `agentqa-init`'s
 `scripts/reset-app-data.sh` yourself, so exploration sees the same starting state
-the test will. `never` → don't reset, and expect state carried over from earlier
-runs.
+the test will. It reads `platform:` and wipes the right way (`simctl` container on
+iOS, `adb shell pm clear` on Android). `never` → don't reset, and expect state
+carried over from earlier runs.
 
 Behavioral knowledge lives in `.agentqa/memory/` — schema:
 [references/memory-model.md](references/memory-model.md).
@@ -83,7 +99,9 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    the live hierarchy, and it is your source of truth; code reading lies.
    Never spawn a sub-agent for this either.
 
-   Drive the CLI directly: `agent-device open <bundle_id>` (when
+   Drive the CLI directly: `agent-device open <app_id>` — the app id is the
+   `bundle_id` (iOS) or `app_package` (Android) from the config; add
+   `--platform android` on Android so agent-device selects the right target. (When
    `reset_app_data: always` in `config.yml`, wipe first with `agentqa-init`'s
    `scripts/reset-app-data.sh`, so exploration starts where the tests will) →
    `agent-device snapshot -i` → `agent-device press`/`fill <id> --settle`. Do the
@@ -130,9 +148,14 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
      frontmatter. Then run `python3 scripts/memory-index.py .agentqa/memory` to
      refresh `index.md`.
 4. **Add accessibility identifiers** — strictly additive app-code changes per the
-   config's `identifier_convention`; never behavior, layout, or logic. Log each
-   new one as `[identifier] <name> → <file/symbol>; added-unverified <today> #<flow>` in
-   the screen note. Verify with `git diff --numstat`: deletions must be 0.
+   config's `identifier_convention`; never behavior, layout, or logic. The
+   **mechanism is platform-specific**: iOS sets `accessibilityIdentifier`;
+   Android sets a `contentDescription` (or a Compose `testTag` exposed as
+   `resource-id`) — the additive strategies and the exact page_source shape to
+   expect are in [references/android.md](references/android.md). Whichever
+   platform, log each new one as `[identifier] <name> → <file/symbol>;
+   added-unverified <today> #<flow>` in the screen note. Verify with
+   `git diff --numstat`: deletions must be 0.
 5. **Build checkpoint** — first write `.agentqa/memory/.run-checkpoint.md` (Working
    layer; schema in [references/memory-model.md](references/memory-model.md)): the
    `added-unverified` identifiers from step 4, the assertion from step 2, and
@@ -145,13 +168,17 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
 6. **Verify identifiers in the live hierarchy** — resume from
    `.agentqa/memory/.run-checkpoint.md` (don't re-ask the human or re-explore); pull
    Appium `page_source` (via the Appium MCP if present, else shell out) and grep
-   for the new names. On
+   for the new names (iOS: `name="…"`; Android: `content-desc="…"` or
+   `resource-id="…/…"` — see [references/android.md](references/android.md)). On
    success, **refresh** each identifier observation to
-   `verified-in-hierarchy <today>`. Missing → fix Swift placement, back to 5.
+   `verified-in-hierarchy <today>`. Missing → fix the identifier's placement in
+   app code (Swift on iOS, the View/Compose node on Android), back to 5.
 7. **Write page object + test** under `<test_dir>/pages|tests/`. Locators: your
-   identifiers for app-owned UI; visible-label predicates only for UI you don't
-   own (web views, and system alerts — neither can carry your identifiers).
-   Credentials only via the env-var names in the config. Assert
+   identifiers for app-owned UI (iOS: accessibility-id / predicate; Android:
+   accessibility-id for a content-desc, or resource-id / UiAutomator — see
+   [references/android.md](references/android.md)); visible-label predicates only
+   for UI you don't own (web views, and system dialogs — neither can carry your
+   identifiers). Credentials only via the env-var names in the config. Assert
    the success criteria from `.session-requirement.md`, and let the failure
    criteria shape the negative/edge cases. Under `reset_app_data: always` the
    session starts on a wiped app — the test must establish its own state (log in,
@@ -183,15 +210,22 @@ no sub-agents anywhere in this skill.
 ### Preconditions (check, don't assume)
 
 ```bash
+# iOS
 xcrun simctl list devices booted | grep -q Booted     # simulator up
 xcrun simctl listapps booted | grep -q <bundle_id>    # app installed
 nc -z 127.0.0.1 4723                                  # appium server up
+
+# Android
+adb devices | awk '$2=="device"' | grep -q .          # device/emulator up
+adb shell pm list packages | grep -q <app_package>    # app installed
+nc -z 127.0.0.1 4723                                  # appium server up
 ```
 
-Simulator or app missing → per `build.policy`: ask the user (human) or
+Device or app missing → per `build.policy`: ask the user (human) or
 build/install yourself (agent). Appium down → start it in the background:
-`appium --log-level warn` (the first-ever session builds WebDriverAgent —
-takes minutes once).
+`appium --log-level warn` (on iOS the first-ever session builds WebDriverAgent —
+takes minutes once; on Android the first session installs the UiAutomator2
+server APKs).
 
 ### Run
 

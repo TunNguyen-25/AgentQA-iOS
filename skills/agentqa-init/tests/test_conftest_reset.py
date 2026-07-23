@@ -1,9 +1,10 @@
 """Tests for the scaffold conftest's reset-app-data policy and wipe guard.
 
-conftest.py imports appium/selenium at module load and resolves the bundle id at
-import time, so it is loaded here from a temp copy of the real layout
+conftest.py imports appium/selenium at module load and resolves the platform +
+app id at import time, so it is loaded here from a temp copy of the real layout
 (<repo>/.agentqa/config.yml next to <repo>/<test_dir>/conftest.py) with the
-third-party imports stubbed.
+third-party imports stubbed. Covers both platforms: iOS (simctl container wipe)
+and Android (`adb shell pm clear`).
 """
 import importlib.util
 import shutil
@@ -21,6 +22,8 @@ def _stub_third_party(monkeypatch):
     appium.webdriver = types.SimpleNamespace(Remote=lambda *a, **k: None)
     options_ios = types.ModuleType("appium.options.ios")
     options_ios.XCUITestOptions = type("XCUITestOptions", (), {})
+    options_android = types.ModuleType("appium.options.android")
+    options_android.UiAutomator2Options = type("UiAutomator2Options", (), {})
     events = types.ModuleType("selenium.webdriver.support.events")
     events.AbstractEventListener = type("AbstractEventListener", (), {})
     events.EventFiringWebDriver = type("EventFiringWebDriver", (), {})
@@ -28,6 +31,7 @@ def _stub_third_party(monkeypatch):
         "appium": appium,
         "appium.options": types.ModuleType("appium.options"),
         "appium.options.ios": options_ios,
+        "appium.options.android": options_android,
         "selenium": types.ModuleType("selenium"),
         "selenium.webdriver": types.ModuleType("selenium.webdriver"),
         "selenium.webdriver.support": types.ModuleType("selenium.webdriver.support"),
@@ -53,18 +57,27 @@ def load_conftest(monkeypatch, tmp_path, config_body):
 
 
 BASE_CONFIG = 'bundle_id: com.example.app   # app under test\n'
+ANDROID_CONFIG = 'platform: android\napp_package: com.example.app   # app under test\n'
 
 
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    """Keep leaked AGENTQA_* env out of the import-time platform/app resolution."""
+    for var in ("AGENTQA_PLATFORM", "AGENTQA_BUNDLE_ID", "AGENTQA_APP_PACKAGE",
+                "AGENTQA_APP_ACTIVITY", "AGENTQA_RESET_APP_DATA"):
+        monkeypatch.delenv(var, raising=False)
+
+
+# --------------------------------------------------------------------------- iOS
 def test_reset_defaults_to_always_when_unset(monkeypatch, tmp_path):
-    monkeypatch.delenv("AGENTQA_RESET_APP_DATA", raising=False)
-    monkeypatch.delenv("AGENTQA_BUNDLE_ID", raising=False)
     conftest = load_conftest(monkeypatch, tmp_path, BASE_CONFIG)
+    assert conftest.platform() == "ios"
     assert conftest.BUNDLE_ID == "com.example.app"
+    assert conftest.APP_ID == "com.example.app"
     assert conftest.reset_app_data_enabled() is True
 
 
 def test_reset_never_in_config_disables_it(monkeypatch, tmp_path):
-    monkeypatch.delenv("AGENTQA_RESET_APP_DATA", raising=False)
     conftest = load_conftest(monkeypatch, tmp_path, BASE_CONFIG + "reset_app_data: never\n")
     assert conftest.reset_app_data_enabled() is False
 
@@ -130,3 +143,59 @@ def test_reset_refuses_when_app_is_not_installed(monkeypatch, tmp_path):
     monkeypatch.setattr(conftest.subprocess, "run", _fake_simctl("", returncode=1))
     with pytest.raises(RuntimeError, match="Cannot reset"):
         conftest.reset_app_data("SIM-UDID")
+
+
+# ----------------------------------------------------------------------- Android
+def test_android_resolves_platform_and_package(monkeypatch, tmp_path):
+    conftest = load_conftest(monkeypatch, tmp_path, ANDROID_CONFIG)
+    assert conftest.platform() == "android"
+    assert conftest.APP_ID == "com.example.app"
+    assert conftest.BUNDLE_ID == "com.example.app"   # alias tracks APP_ID
+    assert conftest.reset_app_data_enabled() is True
+
+
+def _fake_adb(installed_lines, calls=None):
+    """Fake adb: `pm list packages` returns installed_lines; other calls are ok."""
+    def run(cmd, **kwargs):
+        if calls is not None:
+            calls.append(cmd)
+        if "list" in cmd and "packages" in cmd:
+            return types.SimpleNamespace(stdout=installed_lines, returncode=0)
+        return types.SimpleNamespace(stdout="", returncode=0)
+    return run
+
+
+def test_android_reset_calls_pm_clear(monkeypatch, tmp_path):
+    conftest = load_conftest(monkeypatch, tmp_path, ANDROID_CONFIG)
+    calls = []
+    monkeypatch.setattr(conftest.subprocess, "run",
+                        _fake_adb("package:com.example.app\n", calls=calls))
+    conftest.reset_app_data("emulator-5554")
+    assert ["adb", "-s", "emulator-5554", "shell", "pm", "clear", "com.example.app"] in calls
+
+
+def test_android_reset_refuses_when_not_installed(monkeypatch, tmp_path):
+    conftest = load_conftest(monkeypatch, tmp_path, ANDROID_CONFIG)
+    monkeypatch.setattr(conftest.subprocess, "run", _fake_adb(""))
+    with pytest.raises(RuntimeError, match="Cannot reset"):
+        conftest.reset_app_data("emulator-5554")
+
+
+def test_android_reset_matches_package_exactly(monkeypatch, tmp_path):
+    """`pm list packages <pkg>` prefix-matches, so a lookalike must NOT count as installed."""
+    conftest = load_conftest(monkeypatch, tmp_path, ANDROID_CONFIG)
+    calls = []
+    monkeypatch.setattr(conftest.subprocess, "run",
+                        _fake_adb("package:com.example.app2\n", calls=calls))
+    with pytest.raises(RuntimeError, match="Cannot reset"):
+        conftest.reset_app_data("emulator-5554")
+    assert not any("clear" in c for c in calls)  # never cleared the wrong package
+
+
+def test_env_platform_override_forces_android(monkeypatch, tmp_path):
+    """AGENTQA_PLATFORM + AGENTQA_APP_PACKAGE drive dispatch even without config keys."""
+    monkeypatch.setenv("AGENTQA_PLATFORM", "android")
+    monkeypatch.setenv("AGENTQA_APP_PACKAGE", "com.override.app")
+    conftest = load_conftest(monkeypatch, tmp_path, "test_dir: AutomationTests\n")
+    assert conftest.platform() == "android"
+    assert conftest.APP_ID == "com.override.app"

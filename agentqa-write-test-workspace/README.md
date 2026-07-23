@@ -14,7 +14,7 @@ hygiene, cleanup — and makes them checkable in about seven minutes a run.
 | Path | What it is |
 |---|---|
 | `fixture/app-repo/` | Mock MyTV repo: Swift/UIKit sources, `.agentqa/config.yml`, `AutomationTests/` |
-| `fixture/bin/` | Shims on PATH: `agent-device`, `codegraph`, `xcrun`, `page-source`, `pytest`, `ask-user` |
+| `fixture/bin/` | Shims on PATH: `agent-device`, `codegraph`, `xcrun`, `adb`, `page-source`, `pytest`, `ask-user` |
 | `fixture/bin/appstate.py` | The screen graph every shim shares, plus the call log |
 | `fixture/variants/{a,b,c}/` | Overlays: new flow · post-build resume · failing test |
 | `fixture/make-run.sh` | Assembles one isolated run (`repo/`, `state/`, `env.sh`) |
@@ -91,3 +91,12 @@ entry-point question. That is the honest size of that change.
 - Assertions have been the fragile part, not the skill: six graders bugs were
   found and fixed across two iterations, every one a false positive. Treat a new
   failure as suspect until you have read the evidence behind it.
+- **Android coverage is partial by design.** The `adb` shim + the platform-aware
+  `reset-app-data.sh`/`conftest.py` make the *deterministic* Android plumbing
+  (green-loop preconditions, `pm clear` reset) exercisable without an emulator,
+  and `skills/agentqa-init/tests/test_conftest_reset.py` unit-tests both driver
+  branches. A full Android *exploration* fixture (a mock Kotlin/Compose app with
+  its own state machine) is deferred — the current `appstate` screen graph is the
+  iOS/Swift app, so an end-to-end Android behaviour eval still needs a real
+  device. Adding Android was validated by the unit tests + shim smoke tests, not
+  a live green run.

@@ -10,6 +10,12 @@ regenerates that). Creed: *code reading lies; only the live hierarchy is truth* 
 `agent-device snapshot` while exploring, Appium `page_source` once Appium is in
 play (step 6 onward).
 
+The schema below is **platform-neutral** — it holds for iOS and Android alike. An
+`[identifier]` records a logical name and where it's set; the *mechanism* behind
+it (iOS `accessibilityIdentifier`, Android `contentDescription`/`resource-id`) is
+the write step's concern, not the note's. When you record a screen's identifiers
+or quirks, they read the same way whichever platform produced them.
+
 ## Where & format
 
 - Lives in `.agentqa/memory/` at the host repo root, **committed** (team-shared).
@@ -31,7 +37,7 @@ play (step 6 onward).
 | `flows/` | user flow | nav path, **the assertion that matters**, edge cases, native-vs-web per step |
 | `screens/` | screen | native-or-web, identifier map (name → placement + verification status/date), quirks |
 | `failures/` | phantom/flaky signature | symptom → cause → remedy (cross-flow library) |
-| `env.md` | (single file) | build-policy rationale, credential env-var names, simulator/CodeGraph gotchas |
+| `env.md` | (single file) | build-policy rationale, credential env-var names, device/simulator + CodeGraph gotchas |
 
 ## Schema
 
