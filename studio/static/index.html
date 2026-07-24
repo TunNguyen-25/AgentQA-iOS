@@ -1,10 +1,25 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>AgentQA Studio</title>
-</head>
-<body>
-  <p>AgentQA Studio placeholder — full UI lands in Task 6.</p>
-</body>
-</html>
+<meta charset="utf-8">
+<title>AgentQA Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+<header>
+  <h1>AgentQA Studio</h1>
+  <div id="config" class="muted">loading config…</div>
+</header>
+<main>
+  <section id="rig-panel">
+    <h2>Rig <button data-refresh="rig">↻</button></h2>
+    <div id="rig" class="dots">checking…</div>
+  </section>
+  <section id="runner-panel">
+    <h2>Tests</h2>
+    <div id="tests"></div>
+    <pre id="run-output" class="output"></pre>
+  </section>
+  <section id="memory-panel">
+    <h2>Memory <button data-refresh="memory">↻</button></h2>
+    <div id="memory"></div>
+    <pre id="note-view" class="output"></pre>
+  </section>
+</main>
+<script src="/static/app.js"></script>

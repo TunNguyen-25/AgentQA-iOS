@@ -115,3 +115,10 @@ def test_post_missing_config_returns_500(tmp_path):
             assert e.code == 500
     finally:
         srv.shutdown()
+
+
+def test_static_assets_served(live_server):
+    for asset, needle in [("/static/app.js", "fetchJSON"), ("/static/style.css", "--bg")]:
+        status, body = _get(live_server, asset)
+        assert status == 200, asset
+        assert needle in body, asset
