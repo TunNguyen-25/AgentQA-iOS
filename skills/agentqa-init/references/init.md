@@ -121,6 +121,13 @@ runs `adb shell pm clear <app_package>` (data + cache + revoked runtime
 permissions). Neither uninstalls the binary, so a `build.policy: human` build
 stays installed. When `reset_app_data: never`, nobody calls it.
 
+It exits non-zero whenever it could not wipe — the app is not installed, no
+device is booted, `simctl` reported a container path it does not recognise, `pm
+clear` did not report success. That is deliberate: a reset that quietly did
+nothing hands the next test yesterday's state, and the cost lands much later, as
+a flaky test nobody traces back to here. If a caller genuinely does not mind,
+`|| true` says so explicitly.
+
 ## 6. Verify
 
 `scripts/setup-all.sh --check` should end all green, and

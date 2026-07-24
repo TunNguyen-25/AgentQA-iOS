@@ -16,6 +16,7 @@ hygiene, cleanup — and makes them checkable in about seven minutes a run.
 | `fixture/app-repo/` | Mock MyTV repo: Swift/UIKit sources, `.agentqa/config.yml`, `AutomationTests/` |
 | `fixture/bin/` | Shims on PATH: `agent-device`, `codegraph`, `xcrun`, `adb`, `page-source`, `pytest`, `ask-user` |
 | `fixture/bin/appstate.py` | The screen graph every shim shares, plus the call log |
+| `fixture/tests/` | Shim tests — `ask-user` routing (incl. the 63-question corpus) and the `xcrun`/`reset-app-data.sh` contract |
 | `fixture/variants/{a,b,c}/` | Overlays: new flow · post-build resume · failing test |
 | `fixture/variants/a-docs/` | = `a` + a `docs:` block and an SRD that **matches** the build |
 | `fixture/variants/a-docs-conflict/` | = `a` + a `docs:` block and an SRD that has **drifted** from the build |
@@ -33,6 +34,7 @@ hygiene, cleanup — and makes them checkable in about seven minutes a run.
 ## Running an iteration
 
 ```bash
+python3 -m pytest fixture/tests        # the shims answer correctly before spending a run on them
 ./setup-iteration.sh 3
 nohup python3 watch-runs.py iteration-3 1.5 > watch.log 2>&1 &
 ```
@@ -123,29 +125,40 @@ discoverability when the specs live somewhere the agent would never browse,
 scoping across a large doc set (there is one small doc here), and behaviour on
 weaker models where the creed may not generalise as reliably.
 
-Two harness faults this iteration exposed, both deferred as separate work:
+Two harness faults this iteration exposed, both since fixed — see
+`fixture/tests/` and `skills/agentqa-init/tests/test_reset_app_data_sh.py`:
 
-- **`ask-user` misroutes answers** — bucket ordering. `"block"` is tested before
-  `"permission"`, so a permission question mentioning "blocks the flow" gets the
-  blockers answer; success questions phrased with "username/password" fall
-  through to the credentials bucket. Every one of the six runs hit it, and it
-  costs both arms the batched-round assertion. Reorder the buckets and match on
-  intent, not substrings.
-- **`reset-app-data.sh` infers "not installed" from path *shape***
+- **`ask-user` misrouted answers.** First-substring-wins over an ordered table
+  cannot read a paragraph: `"block"` was tested before `"permission"`, so a
+  permission question saying the alert "blocks the flow" got the blockers answer,
+  and a success question naming `APP_TEST_USERNAME` fell through to credentials.
+  All six runs hit it and it cost both arms the batched-round assertion. Routing
+  now scores evidence — word-boundary signals, strong vs weak, a triple weight on
+  the opening clause where the agent states its intent, and a second answer when
+  the question announces two intents. All 63 questions the six runs actually
+  asked are pinned in `fixture/tests/routing-corpus.json`; every one of them now
+  routes correctly and none falls back to the neutral reply.
+- **`reset-app-data.sh` inferred "not installed" from path *shape***
   (`*/Containers/Data/Application/*`) rather than `get_app_container`'s exit
-  code, so an unexpected shape silently skips the wipe while printing a
-  misleading message. On a real simulator the path does match, so this is
-  primarily a fixture-fidelity gap — the shim returns an unrealistic path — that
-  exposed a latent robustness flaw in the shipped script.
+  code, so an unexpected shape skipped the wipe and exited 0 with a reassuring
+  message. Installed-ness is now the exit code's answer and the shape check is
+  what it always should have been — a guard on `rm -rf` that errors out rather
+  than silently declining. The fixture `xcrun` shim was the other half: it
+  returned `<state>/app-container` and exited 0 for any bundle, so in this
+  fixture the wipe had *never* run. It now returns a real
+  `Containers/Data/Application/<UUID>` path and fails for an app it does not
+  have, which is what surfaced the script bug in the first place.
 
 ## Known limits
 
 - `memory-write.py` runs by absolute path, so it never reaches the shim log.
   Assertions about it lean on the run's own summary or on note contents.
 - The mock app is one flow. It exercises process discipline, not Appium breadth.
-- `ask-user` answers are keyword-routed; a question phrased unusually gets a
-  neutral reply, which reads as the reviewer dodging. Widen `ANSWERS` when that
-  shows up in a transcript.
+- `ask-user` still routes on signals, not understanding. A question phrased
+  unlike anything in `BUCKETS` gets the neutral reply, which reads as the
+  reviewer dodging. `ask-user --explain "<q>"` prints the per-bucket scores;
+  widen the signals and add the question to `fixture/tests/routing-corpus.json`
+  when that shows up in a transcript.
 - Assertions have been the fragile part, not the skill: six graders bugs were
   found and fixed across two iterations, every one a false positive. Treat a new
   failure as suspect until you have read the evidence behind it.

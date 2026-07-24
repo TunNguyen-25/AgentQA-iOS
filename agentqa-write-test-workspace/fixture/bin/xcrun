@@ -12,6 +12,7 @@ import appstate as A  # noqa: E402
 
 UDID = "A1B2C3D4-0000-4000-8000-000000000001"
 BUNDLE = "com.vnpt.media.mobileb2c"
+CONTAINER_UUID = "9F3C1A20-1111-4222-8333-444455556666"
 
 DEVICES = {
     "devices": {
@@ -52,7 +53,20 @@ def main(argv):
         return 0
 
     if sub == "get_app_container":
-        d = A.STATE_DIR / "app-container"
+        # Two halves of simctl's contract that the old shim skipped, and which
+        # reset-app-data.sh depends on: a real
+        # */Containers/Data/Application/<UUID> path, and a NON-ZERO exit when the
+        # app is not installed. Always succeeding with a made-up path meant the
+        # script's not-installed branch was never exercised here — and it turned
+        # out to be reading the path shape instead of the exit code.
+        bundle = a[2] if len(a) > 2 else ""
+        if bundle != BUNDLE:
+            print("An error was encountered processing the command "
+                  "(domain=IDEFoundationErrorDomain, code=1):", file=sys.stderr)
+            print(f'No installed application with bundle identifier "{bundle}" '
+                  "was found on the device.", file=sys.stderr)
+            return 2
+        d = A.STATE_DIR / "Containers" / "Data" / "Application" / CONTAINER_UUID
         d.mkdir(parents=True, exist_ok=True)
         print(str(d))
         return 0

@@ -12,6 +12,12 @@
 # Android: `adb shell pm clear` — clears the app's data + cache and revokes its
 #      runtime permissions. Keeps the APK, so a human-installed build survives.
 # Neither wipes the app binary or the shared keychain/keystore.
+#
+# Exits non-zero if it could not wipe — including when the app is not installed.
+# A caller that genuinely does not care can `|| true`, but the default has to be
+# loud: a reset that silently did nothing leaves the next test running against
+# yesterday's state, and that surfaces later as a flaky test rather than as this
+# script's problem.
 set -euo pipefail
 
 ROOT="${AGENTQA_PROJECT_ROOT:-$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || pwd)}"
@@ -38,17 +44,53 @@ reset_ios() {
   fi
   # The app must not be running while its container is emptied.
   xcrun simctl terminate booted "$bundle" >/dev/null 2>&1 || true
-  local container
-  container="$(xcrun simctl get_app_container booted "$bundle" data 2>/dev/null || true)"
+
+  # Whether the app is installed is simctl's answer to give, not something to
+  # infer from the shape of what it printed: those are different questions, and
+  # conflating them meant any path simctl did not phrase as expected was read as
+  # "not installed" and the wipe was skipped with a misleading message.
+  local container status=0 errfile
+  errfile="$(mktemp "${TMPDIR:-/tmp}/reset-app-data.XXXXXX")"
+  container="$(xcrun simctl get_app_container booted "$bundle" data 2>"$errfile")" || status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "reset-app-data: $bundle is not installed on the booted simulator" \
+         "(simctl get_app_container exited $status) — install the build first" >&2
+    # Pass simctl's own words through: "exited 4" and "xcrun: command not found"
+    # need very different fixes, and only simctl can tell them apart.
+    if [ -s "$errfile" ]; then
+      sed 's/^/reset-app-data:   simctl: /' "$errfile" >&2
+    fi
+    rm -f "$errfile"
+    exit 1
+  fi
+  rm -f "$errfile"
+
+  # The shape check is now a safety guard on `rm -rf`, not an install probe. An
+  # unexpected path means simctl told us something this script does not
+  # understand, so stop rather than delete inside it — or quietly skip it.
   case "$container" in
-    */Containers/Data/Application/*)
-      find "$container" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-      echo "reset-app-data: wiped data container for $bundle"
+    */Containers/Data/Application/*) ;;
+    "")
+      echo "reset-app-data: simctl reported no data container path for $bundle" \
+           "(exit 0 with empty output) — refusing to guess" >&2
+      exit 1
       ;;
     *)
-      echo "reset-app-data: $bundle not installed on the booted simulator — nothing to wipe" >&2
+      echo "reset-app-data: simctl reported an unexpected data container for $bundle:" >&2
+      echo "reset-app-data:   $container" >&2
+      echo "reset-app-data: expected a */Containers/Data/Application/* path;" \
+           "refusing to delete anything under it. Wipe it by hand, or use" \
+           "\`xcrun simctl uninstall\` if losing the build is acceptable." >&2
+      exit 1
       ;;
   esac
+  if [ ! -d "$container" ]; then
+    echo "reset-app-data: data container for $bundle does not exist: $container" >&2
+    exit 1
+  fi
+
+  find "$container" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  echo "reset-app-data: wiped data container for $bundle ($container)"
   xcrun simctl privacy booted reset all "$bundle" >/dev/null 2>&1 || true
 }
 
@@ -70,12 +112,25 @@ reset_android() {
     exit 1
   fi
   if ! "${adb_target[@]}" shell pm list packages 2>/dev/null | grep -qx "package:$pkg"; then
-    echo "reset-app-data: $pkg not installed on the device — nothing to wipe" >&2
-    return 0
+    echo "reset-app-data: $pkg is not installed on the device — install the build first" >&2
+    exit 1
   fi
   # pm clear empties data + cache and revokes runtime permissions; the APK stays.
-  "${adb_target[@]}" shell pm clear "$pkg" >/dev/null
-  echo "reset-app-data: cleared data + permissions for $pkg"
+  # `adb shell` reports the exit status of adb, not of the command it ran, so the
+  # only trustworthy signal here is pm's own "Success" line — same failure mode as
+  # the iOS branch above, one layer further out.
+  local out
+  out="$("${adb_target[@]}" shell pm clear "$pkg" 2>&1 || true)"
+  case "$out" in
+    *Success*)
+      echo "reset-app-data: cleared data + permissions for $pkg"
+      ;;
+    *)
+      echo "reset-app-data: pm clear did not report success for $pkg:" \
+           "${out:-<no output>}" >&2
+      exit 1
+      ;;
+  esac
 }
 
 case "$PLATFORM" in
