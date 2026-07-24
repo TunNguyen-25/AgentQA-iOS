@@ -19,3 +19,4 @@ button { font: inherit; padding: 3px 10px; border: 1px solid var(--line); border
 .output { background: #0c0d10; color: #d6d6d6; padding: 10px; border-radius: 6px; max-height: 320px; overflow: auto; white-space: pre-wrap; }
 .mem-group { margin-bottom: 8px; } .mem-group a { display: inline-block; margin: 0 8px 4px 0; }
 button:disabled { opacity: .5; cursor: default; }
+.mem-actions { display: flex; gap: 8px; align-items: center; margin: 8px 0; }

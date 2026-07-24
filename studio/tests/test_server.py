@@ -122,3 +122,15 @@ def test_static_assets_served(live_server):
         status, body = _get(live_server, asset)
         assert status == 200, asset
         assert needle in body, asset
+
+
+def test_memory_stale_endpoint_none_without_scripts(live_server):
+    status, body = _get(live_server, "/api/memory/stale")
+    assert status == 200
+    assert json.loads(body)["stale"] is None
+
+
+def test_memory_lint_endpoint_none_without_scripts(live_server):
+    status, body = _get(live_server, "/api/memory/lint")
+    assert status == 200
+    assert json.loads(body)["lint"] is None

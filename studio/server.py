@@ -80,6 +80,8 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                 return self._json({"error": "config missing: %s" % e}, 500)
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
+            except Exception:
+                return self._json({"error": "internal error"}, 500)
 
         def do_POST(self):
             u = urlparse(self.path)
@@ -104,6 +106,8 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
             except ValueError as e:
                 # covers int(Content-Length) and json.loads (JSONDecodeError ⊂ ValueError)
                 return self._json({"error": str(e)}, 400)
+            except Exception:
+                return self._json({"error": "internal error"}, 500)
 
         def _sse(self, run_id):
             self.send_response(200)
@@ -114,9 +118,9 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                 for line in run_mgr.lines(run_id):
                     self.wfile.write(("data: %s\n\n" % line).encode())
                     self.wfile.flush()
-            except OSError:
-                # client disconnected (tab closed / navigated away): BrokenPipeError
-                # and ConnectionResetError are both OSError subclasses.
+            except Exception:
+                # headers already sent — a client disconnect (BrokenPipeError /
+                # ConnectionResetError) or any streaming error just stops the stream.
                 return
 
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)

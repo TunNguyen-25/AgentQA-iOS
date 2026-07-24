@@ -134,14 +134,48 @@ async function loadMemory() {
       }
       box.appendChild(group);
     }
+    box.appendChild(el(`<div class="muted">env.md: ${m.env ? "present" : "absent"}</div>`));
   } catch (err) {
     box.textContent = `memory error: ${err.message}`;
+  }
+}
+
+async function loadStale() {
+  const box = document.getElementById("note-view");
+  try {
+    const r = await fetchJSON("/api/memory/stale");
+    box.textContent = r.stale == null
+      ? "stale check unavailable (memory scripts not found)"
+      : (r.stale || "(nothing stale)");
+  } catch (err) {
+    box.textContent = `stale error: ${err.message}`;
+  }
+}
+
+async function loadLint() {
+  const health = document.getElementById("mem-health");
+  const box = document.getElementById("note-view");
+  try {
+    const r = await fetchJSON("/api/memory/lint");
+    if (r.lint == null) {
+      health.textContent = "lint: unavailable";
+      health.className = "muted";
+      box.textContent = "lint unavailable (memory scripts not found)";
+      return;
+    }
+    health.textContent = r.lint.ok ? "lint: OK" : "lint: FAIL";
+    health.className = r.lint.ok ? "dot ok" : "dot bad";
+    box.textContent = r.lint.output || "(no output)";
+  } catch (err) {
+    box.textContent = `lint error: ${err.message}`;
   }
 }
 
 document.querySelectorAll("[data-refresh]").forEach((b) => {
   b.onclick = () => ({ rig: loadRig, memory: loadMemory }[b.dataset.refresh]());
 });
+document.getElementById("stale-btn").onclick = loadStale;
+document.getElementById("lint-btn").onclick = loadLint;
 
 loadConfig();
 loadRig();
