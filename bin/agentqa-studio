@@ -1,13 +1,34 @@
 #!/usr/bin/env bash
 # agentqa-studio — launch the AgentQA Studio dashboard against the current app repo.
+#
+# Install on PATH (so you can run `agentqa-studio` from any repo):
+#   ln -sf "$(pwd)/bin/agentqa-studio" "$HOME/.local/bin/agentqa-studio"
+#   # then ensure ~/.local/bin is on your PATH
+#
+# Env: AGENTQA_STUDIO_PORT overrides the default port (7332).
 set -euo pipefail
 
-# Resolve this script's real location (studio/ lives one level up from bin/).
-SELF="$(cd "$(dirname "$0")" && pwd)"
-STUDIO_ROOT="$(cd "$SELF/.." && pwd)"
-SERVER="$STUDIO_ROOT/studio/server.py"
+# Resolve this script's real path, following symlinks, so a PATH symlink
+# (e.g. ~/.local/bin/agentqa-studio) still finds the studio/ package.
+# BSD readlink (macOS) has no -f, so walk the symlink chain manually.
+resolve() {
+  local target="$1" dir
+  while [ -L "$target" ]; do
+    dir="$(cd "$(dirname "$target")" && pwd)"
+    target="$(readlink "$target")"
+    case "$target" in
+      /*) ;;
+      *) target="$dir/$target" ;;
+    esac
+  done
+  echo "$target"
+}
 
-# App repo = nearest git toplevel, else the current directory.
+SELF_PATH="$(resolve "$0")"
+SELF="$(cd "$(dirname "$SELF_PATH")" && pwd)"
+STUDIO_ROOT="$(cd "$SELF/.." && pwd)"
+
+# App repo = nearest git toplevel from where the user invoked us, else cwd.
 REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 # Locate the installed write-test scripts for stale/lint (best effort).
@@ -19,14 +40,17 @@ for cand in \
   if [ -f "$cand/memory-index.py" ]; then MEM_SCRIPTS="$cand"; break; fi
 done
 
-PY="$(command -v python3)"
+PY="$(command -v python3 || true)"
+[ -n "$PY" ] || { echo "agentqa-studio: python3 not found on PATH" >&2; exit 1; }
+
 ARGS=(--repo "$REPO" --port "${AGENTQA_STUDIO_PORT:-7332}" --open)
 [ -n "$MEM_SCRIPTS" ] && ARGS+=(--memory-scripts "$MEM_SCRIPTS")
 
 if [ "${1:-}" = "--dry-run" ]; then
-  echo "$PY $SERVER ${ARGS[*]}"
+  printf 'PYTHONPATH=%s %s -m studio.server' "$STUDIO_ROOT" "$PY"
+  printf ' %q' "${ARGS[@]}"
+  printf '\n'
   exit 0
 fi
 
-cd "$STUDIO_ROOT"          # so `python3 -m`-style `studio` package import resolves
-exec "$PY" -c "import sys; sys.path.insert(0, '$STUDIO_ROOT'); from studio.server import main; main()" "${ARGS[@]}"
+exec env PYTHONPATH="$STUDIO_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m studio.server "${ARGS[@]}"
