@@ -25,7 +25,7 @@ def _ios(summary: Dict[str, Any]) -> Tuple[bool, bool]:
     rc, out = _run(["xcrun", "simctl", "list", "devices", "booted"])
     booted = rc == 0 and "Booted" in out
     installed = False
-    if booted:
+    if booted and summary.get("app_id"):
         rc2, out2 = _run(["xcrun", "simctl", "listapps", "booted"])
         installed = rc2 == 0 and summary["app_id"] in out2
     return booted, installed
@@ -37,7 +37,7 @@ def _android(summary: Dict[str, Any]) -> Tuple[bool, bool]:
         line.strip().endswith("device") for line in out.splitlines()[1:]
     )
     installed = False
-    if booted:
+    if booted and summary.get("app_id"):
         rc2, out2 = _run(["adb", "shell", "pm", "list", "packages"])
         installed = rc2 == 0 and ("package:" + summary["app_id"]) in out2
     return booted, installed

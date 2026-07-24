@@ -1,15 +1,14 @@
-from pathlib import Path
 from unittest import mock
 
 from studio import rig
 
 IOS = {"platform": "ios", "app_id": "com.acme.app", "appium_port": 4723}
+ANDROID = {"platform": "android", "app_id": "com.acme.app", "appium_port": 4723}
 
 
 def test_ios_all_green(tmp_path):
     (tmp_path / ".codegraph").mkdir()
     def fake_run(cmd):
-        joined = " ".join(cmd)
         if "list" in cmd and "devices" in cmd:
             return (0, "iPhone 15 (ABC) (Booted)")
         if "listapps" in cmd:
@@ -51,4 +50,49 @@ def test_app_not_installed(tmp_path):
         return (1, "")
     with mock.patch.object(rig, "_run", side_effect=fake_run):
         out = rig.check_rig(IOS, tmp_path)
+    assert out["app_installed"] is False
+
+
+def test_android_all_green(tmp_path):
+    (tmp_path / ".codegraph").mkdir()
+    def fake_run(cmd):
+        if cmd[:2] == ["adb", "devices"]:
+            return (0, "List of devices attached\nemulator-5554\tdevice")
+        if cmd[:3] == ["adb", "shell", "pm"]:
+            return (0, "package:com.acme.app")
+        if cmd[0] == "nc":
+            return (0, "")
+        return (1, "")
+    with mock.patch.object(rig, "_run", side_effect=fake_run):
+        out = rig.check_rig(ANDROID, tmp_path)
+    assert out == {"simulator": True, "app_installed": True, "appium": True, "codegraph": True}
+
+
+def test_android_app_not_installed(tmp_path):
+    (tmp_path / ".codegraph").mkdir()
+    def fake_run(cmd):
+        if cmd[:2] == ["adb", "devices"]:
+            return (0, "List of devices attached\nemulator-5554\tdevice")
+        if cmd[:3] == ["adb", "shell", "pm"]:
+            return (0, "package:com.other.app")
+        if cmd[0] == "nc":
+            return (0, "")
+        return (1, "")
+    with mock.patch.object(rig, "_run", side_effect=fake_run):
+        out = rig.check_rig(ANDROID, tmp_path)
+    assert out["app_installed"] is False
+
+
+def test_empty_app_id_not_installed(tmp_path):
+    summary = {"platform": "ios", "app_id": "", "appium_port": 4723}
+    def fake_run(cmd):
+        if "list" in cmd and "devices" in cmd:
+            return (0, "Booted")
+        if "listapps" in cmd:
+            return (0, "com.something.else = {}")
+        if cmd[0] == "nc":
+            return (0, "")
+        return (1, "")
+    with mock.patch.object(rig, "_run", side_effect=fake_run):
+        out = rig.check_rig(summary, tmp_path)
     assert out["app_installed"] is False
