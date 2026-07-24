@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# agentqa-studio — launch the AgentQA Studio dashboard against the current app repo.
+set -euo pipefail
+
+# Resolve this script's real location (studio/ lives one level up from bin/).
+SELF="$(cd "$(dirname "$0")" && pwd)"
+STUDIO_ROOT="$(cd "$SELF/.." && pwd)"
+SERVER="$STUDIO_ROOT/studio/server.py"
+
+# App repo = nearest git toplevel, else the current directory.
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# Locate the installed write-test scripts for stale/lint (best effort).
+MEM_SCRIPTS=""
+for cand in \
+  "$STUDIO_ROOT/skills/agentqa-write-test/scripts" \
+  "$HOME/.claude/skills/agentqa-write-test/scripts" \
+  "$REPO/.claude/skills/agentqa-write-test/scripts"; do
+  if [ -f "$cand/memory-index.py" ]; then MEM_SCRIPTS="$cand"; break; fi
+done
+
+PY="$(command -v python3)"
+ARGS=(--repo "$REPO" --port "${AGENTQA_STUDIO_PORT:-7332}" --open)
+[ -n "$MEM_SCRIPTS" ] && ARGS+=(--memory-scripts "$MEM_SCRIPTS")
+
+if [ "${1:-}" = "--dry-run" ]; then
+  echo "$PY $SERVER ${ARGS[*]}"
+  exit 0
+fi
+
+cd "$STUDIO_ROOT"          # so `python3 -m`-style `studio` package import resolves
+exec "$PY" -c "import sys; sys.path.insert(0, '$STUDIO_ROOT'); from studio.server import main; main()" "${ARGS[@]}"
