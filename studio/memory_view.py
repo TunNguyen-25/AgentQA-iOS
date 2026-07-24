@@ -1,5 +1,6 @@
 """Read the .agentqa/memory store; optionally run stale/lint via write-test scripts."""
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +30,8 @@ def read_note(repo_root: Path, rel_path: str) -> str:
     target = (mem / rel_path).resolve()
     if mem not in target.parents and target != mem:
         raise ValueError("path escapes memory store: %s" % rel_path)
+    if not target.is_file():
+        raise ValueError("not a readable note: %s" % rel_path)
     return target.read_text()
 
 
@@ -38,13 +41,21 @@ def _run_script(repo_root: Path, scripts: Optional[Path], name: str, *args: str)
     script = Path(scripts) / name
     if not script.is_file():
         return None
-    cmd = ["python3", str(script), str(_mem(repo_root)), *args]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    cmd = [sys.executable, str(script), str(_mem(repo_root)), *args]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except (subprocess.SubprocessError, OSError):
+        return None
 
 
 def stale(repo_root: Path, scripts: Optional[Path]) -> Optional[str]:
     p = _run_script(repo_root, scripts, "memory-index.py", "--stale")
-    return None if p is None else (p.stdout or "")
+    if p is None:
+        return None
+    if p.returncode != 0:
+        # surface failure instead of masking it as "no stale notes"
+        return (p.stdout or "") + (p.stderr or "")
+    return p.stdout or ""
 
 
 def lint(repo_root: Path, scripts: Optional[Path]) -> Optional[Dict[str, Any]]:
