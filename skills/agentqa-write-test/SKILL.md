@@ -4,7 +4,7 @@ description: Turn a natural-language test-case idea into a reviewed, passing App
 license: MIT
 compatibility: iOS (macOS + Xcode + a simulator) or Android (Android SDK + an emulator/device + a JDK); needs the toolchain from /agentqa-init setup and a project configured by /agentqa-init init
 metadata:
-  agentqa-write-test-version: "1.1.0"
+  agentqa-write-test-version: "1.2.0"
 ---
 
 # agentqa-write-test — idea → identifiers → Appium test
@@ -40,6 +40,15 @@ build policy, credential env var names, and identifier convention. Never hardcod
 project facts in tests, and never commit credentials — accounts flow through the
 env vars named in the config.
 
+**Product artifacts (`docs:`, optional).** If the config declares `docs:` — local
+paths/globs pointing at SRDs, PM scenarios, user flows, acceptance criteria — those
+files are an **intent layer**: what the app is *meant* to do. Read them in step 0
+and use them to pre-fill step 2. They are read-only (never write to them) and they
+never outrank the live hierarchy. Most repos won't have the block at all; when it's
+absent, skip it and proceed exactly as you would otherwise — its absence is normal,
+not a blocker, and not something to ask the user about. Full rules:
+[references/memory-model.md](references/memory-model.md).
+
 **Build policy (respect it strictly).** `build.policy` decides who builds:
 - `human` — stop after any app-code change and ask the user to build & install
   onto the booted device; never run the app build yourself (`xcodebuild` on iOS,
@@ -65,6 +74,16 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    points at**. Ground yourself in the screen graph BEFORE committing to an
    assertion. Indexing is CPU-heavy — finish it here, before any simulator work;
    never run it while the simulator or a test suite is running.
+
+   **Then, if `config.yml` declares `docs:`, read the artifacts covering this
+   flow.** Skim for what the team already wrote down about it: intended outcome,
+   acceptance criteria, error states, preconditions, known edge cases. You now hold
+   two priors — the code's structure and the product's intent — and step 3 checks
+   both against the live app. Scope it: `docs:` can match a whole specification
+   library, and you want the sections about *this* flow, not every page of it —
+   grep for the flow's screens and terms and read around the hits. No `docs:`
+   block, nothing matching this flow, or a path that no longer resolves? Move on
+   without comment; most repos have no such docs and the flow is unchanged.
 1. **Recall** — load `.agentqa/memory/index.md` (falls back to
    `flows/<flow>.md` + linked `screens/*` + the `failures/` library until the
    compact index exists; schema:
@@ -80,6 +99,15 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    ones you found — the options are discoverable, the choice isn't. Add
    environment / objective / preconditions only when `config.yml` and `env.md`
    don't already answer them.
+
+   **When step 0's artifacts already answer one of these, propose it back instead
+   of asking cold** — "the spec says a wrong password shows an inline error under
+   the field; still true?" beats an open question the user already wrote the answer
+   to, and it shows you read their docs. The three questions are still *asked* every
+   run — what changes is their form, from blank to confirm-or-correct. Never let a
+   doc skip a question or stand in for the user's answer: specs go stale, and the
+   user is the one who decides what this test must prove. Where the artifacts are
+   silent, ask normally.
    One round is the budget for *requirements*. Blockers and divergences you hit
    live in step 3 are escalated when you hit them — that's required, not a
    second round.
@@ -105,8 +133,12 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    `reset_app_data: always` in `config.yml`, wipe first with `agentqa-init`'s
    `scripts/reset-app-data.sh`, so exploration starts where the tests will) →
    `agent-device snapshot -i` → `agent-device press`/`fill <id> --settle`. Do the
-   **verify-delta** pass: use the flow note as a map, confirm each known waypoint
-   against live state, deep-dive only where reality diverges. Where snapshots are
+   **verify-delta** pass: use the flow note — and whatever the step-0 artifacts
+   claim about this flow — as your map, confirm each known waypoint against live
+   state, deep-dive only where reality diverges. A spec is a claim exactly like a
+   memory note; when the build disagrees with one, **say so** — a doc that no
+   longer matches shipped behavior is something the user will want to know.
+   Where snapshots are
    sparse (web/auth sheets), fall back to `agent-device screenshot` + coordinate
    taps. Cross-check what you see against the CodeGraph map from step 0 (which
    view/controller renders this screen) for symbol-level detail before writing
@@ -147,6 +179,12 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    - Write terse notes (facts, not narration); one-line `summary:` in
      frontmatter. Then run `python3 scripts/memory-index.py .agentqa/memory` to
      refresh `index.md`.
+   - **Only what you observed live goes in.** A claim you read in an artifact and
+     never saw in the hierarchy stays in `.session-requirement.md` and dies with
+     the session. `flows/`, `screens/`, and `failures/` are the store later runs
+     trust as a map — an unverified doc claim in there is indistinguishable from a
+     fact you earned by driving the app, and it would mislead every run after this
+     one.
 4. **Add accessibility identifiers** — strictly additive app-code changes per the
    config's `identifier_convention`; never behavior, layout, or logic. The
    **mechanism is platform-specific**: iOS sets `accessibilityIdentifier`;

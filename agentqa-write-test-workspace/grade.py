@@ -614,7 +614,204 @@ def grade_eval2(r):
     return out
 
 
-GRADERS = {0: grade_eval0, 1: grade_eval1, 2: grade_eval2}
+# ---------------------------------------------------------------------------
+# intent layer (`docs:`) — evals 3/4/5
+#
+# All three are variant-a-family runs, so they inherit grade_eval0's process
+# assertions and add only what the artifacts change.
+# ---------------------------------------------------------------------------
+
+SPEC_REL = "docs/product/login-flow.md"
+LIVE_FAILURE_TEXT = "Sai tên đăng nhập hoặc mật khẩu"
+
+# Claims that exist ONLY in the drifted spec — none of them is reachable live.
+SPEC_ONLY_CLAIMS = [
+    "Ghi nhớ đăng nhập",             # a remember-me toggle that does not exist
+    "Tài khoản không hợp lệ",         # the modal the spec claims on bad creds
+    "Chào mừng quý khách trở lại",    # the welcome popup the spec claims
+]
+
+_SPEC_MENTION = re.compile(
+    r"srd|\bspec\b|docs/product|login-flow\.md|product doc|artifact", re.I)
+_DIVERGENCE = re.compile(
+    r"diverg|differ|mismatch|contradict|outdated|out of date|stale|"
+    r"no longer match|doesn't match|does not match|not match|drift|"
+    r"khác|không khớp", re.I)
+
+
+def _spec_read(r):
+    """Plain file reads bypass the shims, so lean on the agent's own summary."""
+    return bool(_SPEC_MENTION.search(r.summary))
+
+
+def _questions_citing_spec(r):
+    return [q["question"] for q in r.questions
+            if _SPEC_MENTION.search(q.get("question", ""))]
+
+
+def _artifact_untouched(r):
+    """The skill may read `docs:` files, never write them."""
+    status = r.git("status", "--porcelain", "--", "docs/").strip()
+    diff = r.git("diff", "HEAD", "--numstat", "--", "docs/").strip()
+    return (not status and not diff), f"status={status!r} diff={diff!r}"
+
+
+def _memory_text(r):
+    parts = []
+    for pat in (".agentqa/memory/flows/*.md", ".agentqa/memory/screens/*.md",
+                ".agentqa/memory/failures/*.md"):
+        for p in r.glob(pat):
+            parts.append(f"--- {p.name}\n" + p.read_text(encoding="utf-8",
+                                                         errors="replace"))
+    return "\n".join(parts)
+
+
+def _test_sources(r):
+    parts = []
+    for pat in ("AutomationTests/tests/*.py", "AutomationTests/pages/*.py"):
+        for p in r.glob(pat):
+            parts.append(f"--- {p.name}\n" + p.read_text(encoding="utf-8",
+                                                         errors="replace"))
+    return "\n".join(parts)
+
+
+def _code_only(text):
+    """Strip docstrings and comments.
+
+    Documenting that a spec claim is stale ("the SRD says a modal, the build
+    shows an inline error, so this asserts the latter") is exactly the behaviour
+    the intent layer wants. Grepping raw source can't tell that apart from
+    asserting the claim, so prose is removed before the check.
+    """
+    text = re.sub(r'""".*?"""', "", text, flags=re.S)
+    text = re.sub(r"'''.*?'''", "", text, flags=re.S)
+    return re.sub(r"(?m)#.*$", "", text)
+
+
+# A note may legitimately record that a doc claim is contradicted by the build —
+# that is a live observation (of absence), not a leaked claim.
+_REFUTED = re.compile(
+    r"srd|\bspec\b|\bdoc\b|docs/|claims?|stale|outdated|drift|"
+    r"not present|no such|does not exist|doesn't exist|absent|never|"
+    r"không có|không tồn tại|no longer", re.I)
+
+
+def _leaked_claims(mem_text):
+    """Spec-only claims stated as fact — ignoring lines that refute them."""
+    leaked = []
+    for claim in SPEC_ONLY_CLAIMS:
+        for line in mem_text.splitlines():
+            if claim in line and not _REFUTED.search(line):
+                leaked.append(f"{claim} :: {line.strip()[:120]}")
+                break
+    return leaked
+
+
+def grade_eval3(r):
+    """a-docs: an SRD that MATCHES the build should pre-fill the clarify round."""
+    out = grade_eval0(r)
+
+    out.append(A("Read the product artifact declared in `docs:`",
+                 _spec_read(r),
+                 "SUMMARY.md references the SRD/spec" if _spec_read(r)
+                 else "run summary never mentions the SRD, spec, or docs/product"))
+
+    cited = _questions_citing_spec(r)
+    out.append(A("Put the spec's criteria to the user as confirm-or-correct, "
+                 "not a blank question",
+                 bool(cited),
+                 (cited[0][:300] if cited else
+                  "no question referenced the spec; the artifact answered "
+                  "success/failure/blockers but the user was still asked cold")))
+
+    hit = buckets_asked(r)
+    out.append(A("Still asked all three required questions even though the spec "
+                 "answered them",
+                 len(hit) == 3,
+                 f"buckets hit: {sorted(hit)} — a doc may change a question's "
+                 f"form, never remove it"))
+
+    ok, ev = _artifact_untouched(r)
+    out.append(A("Left the artifact untouched (docs: is read-only)", ok, ev))
+    return out
+
+
+def grade_eval4(r):
+    """variant a with no `docs:` block — must behave exactly as it did before."""
+    out = grade_eval0(r)
+
+    asked_for_docs = [
+        q["question"] for q in r.questions
+        if _SPEC_MENTION.search(q.get("question", ""))
+        or re.search(r"documentation|requirements? doc|user flow doc|PRD",
+                     q.get("question", ""), re.I)
+    ]
+    out.append(A("Did not ask the user for product docs or specs",
+                 not asked_for_docs,
+                 (asked_for_docs[0][:300] if asked_for_docs else
+                  "no question requested documentation — correct: most repos "
+                  "have none and absence is not a gap to fill")))
+
+    cfg_dirty = r.git("status", "--porcelain", "--", ".agentqa/config.yml").strip()
+    out.append(A("Did not invent a `docs:` block in the project config",
+                 not cfg_dirty and "docs:" not in r.read(".agentqa/config.yml"),
+                 f"config.yml status={cfg_dirty!r}"))
+    return out
+
+
+def grade_eval5(r):
+    """a-docs-conflict: the spec has drifted; the live build must win."""
+    out = grade_eval0(r)
+
+    out.append(A("Read the product artifact declared in `docs:`",
+                 _spec_read(r),
+                 "SUMMARY.md references the SRD/spec" if _spec_read(r)
+                 else "run summary never mentions the SRD, spec, or docs/product"))
+
+    # The spec omits the terms checkbox entirely; live it gates the submit
+    # button, so a test built from the spec cannot pass.
+    tests = _test_sources(r)
+    terms = re.search(r"terms|điều khoản|checkbox", tests, re.I)
+    out.append(A("Test handles the terms checkbox the spec never mentions",
+                 bool(terms),
+                 f"match: {terms.group(0)!r}" if terms else
+                 "no terms/checkbox handling in pages/ or tests/ — the spec "
+                 "omitted it and the run appears to have trusted the spec"))
+
+    # Spec claims a modal + bounce to intro; live is an inline error in place.
+    # Checked against code with prose stripped: naming the stale claim in a
+    # docstring to explain why it is NOT asserted is correct behaviour.
+    code = _code_only(tests)
+    asserts_live = LIVE_FAILURE_TEXT in code
+    asserts_spec = "Tài khoản không hợp lệ" in code
+    out.append(A("Asserts the live failure text, not the spec's modal",
+                 asserts_live and not asserts_spec,
+                 f"in executable code: live text present={asserts_live}, "
+                 f"spec-only modal text present={asserts_spec}"))
+
+    leaked = _leaked_claims(_memory_text(r))
+    out.append(A("No unverified spec-only claim leaked into flows/ or screens/",
+                 not leaked,
+                 f"leaked claims: {leaked}" if leaked else
+                 "memory holds only live-observed facts (claims that appear are "
+                 "recorded as contradicted by the build)"))
+
+    hay = r.summary + "\n" + "\n".join(
+        q.get("question", "") + " " + q.get("answer", "") for q in r.questions)
+    surfaced = bool(_SPEC_MENTION.search(hay) and _DIVERGENCE.search(hay))
+    out.append(A("Surfaced the spec-vs-build divergence to the user",
+                 surfaced,
+                 "run reports the doc no longer matches the build" if surfaced
+                 else "the gap between the SRD and the shipped behaviour was "
+                      "never reported"))
+
+    ok, ev = _artifact_untouched(r)
+    out.append(A("Left the artifact untouched (docs: is read-only)", ok, ev))
+    return out
+
+
+GRADERS = {0: grade_eval0, 1: grade_eval1, 2: grade_eval2,
+           3: grade_eval3, 4: grade_eval4, 5: grade_eval5}
 
 
 def main(argv):

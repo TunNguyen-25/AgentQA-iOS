@@ -91,7 +91,49 @@ what deserves to persist is captured into `flows/`, `screens/`, and `failures/`.
   `## Added identifiers (awaiting build+verify)`, `## Hypothesis under test`,
   `## Blocker` (e.g. `WAITING_FOR_HUMAN_BUILD`).
 
+## Intent layer — product artifacts (optional, read-only)
+
+Some teams already have SRDs, PM scenarios, user-flow docs, acceptance criteria.
+When `docs:` is set in `.agentqa/config.yml` (local paths/globs), those files are
+readable at step 0 and feed the clarify round. Many repos have none — the block is
+absent by default and everything below simply doesn't apply.
+
+**They are intent, not truth.** A spec says what the app was *meant* to do. It can
+be stale, aspirational, or describe something that shipped differently — which puts
+it *further* from reality than the source code, and the creed already says code
+reading lies. So artifacts get the weakest trust of any source here: they are good
+at the one thing neither code nor the live app can supply (what *should* count as
+passing), and unreliable at everything the live hierarchy answers directly.
+
+What they're for:
+- **Pre-filling the clarify round.** Success / failure / blockers / entry point are
+  the questions asked every run because only a human could answer them. A spec is a
+  written answer — so propose it back for confirmation instead of asking cold. The
+  user still decides; a doc never silently becomes the requirement.
+- **Aiming exploration.** A described flow is another map for the step-3
+  verify-delta pass — one more prior to confirm against live state, exactly like a
+  recalled memory note.
+
+**Provenance rule — spec claims stay session-scoped until observed live.**
+Anything read from an artifact and not yet seen in the live hierarchy lives only in
+`.agentqa/memory/.session-requirement.md`, which is deleted when the session ends.
+It is never written into `flows/`, `screens/`, or `failures/`. Those hold what the
+skill *observed*; letting an unverified doc claim in would poison the store that
+later runs trust as a map, and it would be indistinguishable from a fact earned by
+driving the app. Once exploration confirms a claim, it gets captured the normal way
+— as an observation grounded in what you saw, not a quotation from the doc.
+
+When a doc and the live app disagree, the live app wins and **the divergence is
+worth surfacing** — a spec that no longer matches the build is useful information
+for the user, not just noise to discard.
+
+The skill **never writes to these files.** They are owned by whoever wrote them.
+
 ## Source-of-truth split (no duplication)
 
-- `.agentqa/config.yml` — structured facts. `.agentqa/memory/` — narrative.
-  `CLAUDE.md`/`AGENTS.md` — a pointer to `.agentqa/memory/`.
+- `.agentqa/config.yml` — structured facts. `.agentqa/memory/` — narrative
+  behavioral knowledge the skill earned and owns. `CLAUDE.md`/`AGENTS.md` — a
+  pointer to `.agentqa/memory/`. `docs:` artifacts — external **intent**,
+  read-only, owned by PM/BO/dev; read for requirements, never written, never
+  authoritative over the live hierarchy.
+- Trust order when they disagree: **live hierarchy > memory > code > docs.**

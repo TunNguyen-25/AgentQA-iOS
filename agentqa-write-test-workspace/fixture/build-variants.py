@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Generate the three eval variant overlays.
+"""Generate the eval variant overlays.
 
 Each overlay is copied on top of app-repo/ to produce a run directory.
 
-  a  new flow, empty memory, no identifiers in app code   -> steps 0-5
-  b  post-build resume: identifiers in code, memory + working files seeded -> steps 6-9
-  c  green loop: existing test, failure artifacts on disk, backend 404     -> diagnosis
+  a                new flow, empty memory, no identifiers in app code   -> steps 0-5
+  b                post-build resume: identifiers in code, memory + working files seeded -> steps 6-9
+  c                green loop: existing test, failure artifacts on disk, backend 404 -> diagnosis
+
+  a-docs           = a + a `docs:` block and an SRD that MATCHES the build
+                     -> the intent layer should pre-fill clarify
+  a-docs-conflict  = a + a `docs:` block and an SRD that has DRIFTED from the build
+                     -> live hierarchy must win, divergences must be surfaced,
+                        and unverified doc claims must stay out of flows//screens/
 """
 from pathlib import Path
 import sys
@@ -411,6 +417,166 @@ VARIANTS["c"] = {
     "AutomationTests/tests/test_login.py": TEST_FILE,
     "AutomationTests/artifacts/failed_test_login_happy_path.xml": FAILED_XML,
     ".agentqa/.eval-backend": "error_404\n",
+}
+
+
+# ---------------------------------------------------------------------------
+# intent layer: product artifacts (the `docs:` block)
+#
+# a-docs           an SRD that matches the build -> should pre-fill clarify
+# a-docs-conflict  an SRD that has drifted from the build -> live must win
+# ---------------------------------------------------------------------------
+
+CONFIG_WITH_DOCS = """\
+# Project configuration for the agentqa skill (.agentqa/config.yml)
+# Facts about THIS project that the generic skill must not hardcode.
+
+platform: ios
+bundle_id: com.vnpt.media.mobileb2c
+test_dir: AutomationTests
+
+build:
+  policy: human
+  note: "Manual builds required — signing and package configuration"
+
+reset_app_data: always   # always (DEFAULT) = wipe the app's local data before launch
+
+credentials:
+  username_env: APP_TEST_USERNAME   # env var NAMES only — never values
+  password_env: APP_TEST_PASSWORD
+
+# Product artifacts — intent, not truth. Read-only.
+docs:
+  - docs/product/*.md
+
+identifier_convention: screen_element_type   # e.g. login_username_field, home_profile_button
+
+appium:
+  port: 4723
+"""
+
+# Matches the shipped build. Every claim here is confirmable live.
+SPEC_ACCURATE = """\
+# SRD-014 — Đăng nhập (Login)
+
+| | |
+|---|---|
+| Owner | Trang N. (PM) |
+| Status | Approved — released in 4.8.0 |
+| Last reviewed | 2026-05-12 |
+
+## 1. Scope
+
+Cho phép người dùng đã có tài khoản MyTV đăng nhập trên iOS để truy cập nội dung
+thuê bao. Guest (chưa đăng nhập) vẫn xem được nội dung miễn phí.
+
+## 2. Entry points
+
+Người dùng có thể vào màn hình đăng nhập từ hai nơi:
+
+1. **Màn hình giới thiệu (Introduction)** — nút "Đăng nhập ngay".
+2. **Tab Cá nhân khi đang ở chế độ guest** — nút "Đăng nhập để tiếp tục".
+
+Cả hai đều mở cùng một `LoginViewController`.
+
+## 3. Preconditions
+
+- Thiết bị đã cài app, người dùng đang ở trạng thái **chưa đăng nhập**.
+- Backend staging hoạt động bình thường.
+- Tài khoản QA không bật OTP/2FA.
+
+## 4. Main flow (happy path)
+
+1. Mở app. Ở lần mở đầu tiên sau khi cài/xoá dữ liệu, hệ thống hiển thị
+   **hộp thoại xin quyền thông báo** của iOS. Người dùng chọn một trong hai.
+2. Nhấn "Đăng nhập ngay" → màn hình đăng nhập.
+3. Nhập **Tên đăng nhập** và **Mật khẩu**.
+4. **Tích vào ô "Tôi đồng ý với điều khoản sử dụng"** — nút "Đăng nhập" bị
+   **disabled** cho tới khi ô này được tích. Đây là yêu cầu pháp lý, bắt buộc.
+5. Nhấn "Đăng nhập".
+6. Thành công → chuyển sang **màn hình chính có thanh tab dưới cùng**
+   (Trang chủ / Truyền hình / Cá nhân).
+
+## 5. Alternate & error flows
+
+| # | Điều kiện | Kết quả mong đợi |
+|---|---|---|
+| 5.1 | Sai tên đăng nhập hoặc mật khẩu | **Ở lại màn hình đăng nhập**, hiển thị dòng chữ đỏ **"Sai tên đăng nhập hoặc mật khẩu"** ngay dưới ô mật khẩu. Không có popup, không quay về màn hình giới thiệu. |
+| 5.2 | Chưa tích ô điều khoản | Nút "Đăng nhập" disabled; nếu submit vẫn hiện "Vui lòng đồng ý với điều khoản sử dụng". |
+| 5.3 | Nhấn "Điều khoản sử dụng" | Mở sheet điều khoản (trang web nhúng), có nút "Xong" để đóng. |
+
+## 6. Acceptance criteria
+
+- [x] AC-1: Đăng nhập đúng thông tin + đã tích điều khoản → vào được màn hình
+      chính và nhìn thấy thanh tab.
+- [x] AC-2: Sai mật khẩu → ở lại màn hình đăng nhập kèm thông báo lỗi inline.
+- [x] AC-3: Nút đăng nhập disabled khi chưa tích điều khoản.
+- [x] AC-4: Không lưu mật khẩu vào log hay file trong repo.
+"""
+
+# Drifted from the build on purpose. Three concrete divergences:
+#   - claims NO terms checkbox (live: mandatory, gates the submit button)
+#   - claims a MODAL + bounce to intro on bad credentials
+#     (live: inline error, stays on the login screen)
+#   - claims a "Ghi nhớ đăng nhập" toggle that does not exist live
+SPEC_CONFLICT = """\
+# SRD-014 — Đăng nhập (Login)
+
+| | |
+|---|---|
+| Owner | Trang N. (PM) |
+| Status | Draft — viết trước khi bàn giao cho team iOS |
+| Last reviewed | 2025-11-03 |
+
+## 1. Scope
+
+Cho phép người dùng đã có tài khoản MyTV đăng nhập trên iOS để truy cập nội dung
+thuê bao.
+
+## 2. Entry point
+
+Từ **màn hình giới thiệu (Introduction)** — nút "Đăng nhập ngay".
+
+## 3. Preconditions
+
+- Người dùng đang ở trạng thái chưa đăng nhập.
+- Backend staging hoạt động bình thường.
+
+## 4. Main flow (happy path)
+
+1. Mở app → màn hình giới thiệu.
+2. Nhấn "Đăng nhập ngay" → màn hình đăng nhập.
+3. Nhập **Tên đăng nhập** và **Mật khẩu**.
+4. Bật tuỳ chọn **"Ghi nhớ đăng nhập"** nếu muốn giữ phiên đăng nhập cho lần sau.
+5. Nhấn "Đăng nhập".
+6. Thành công → chuyển sang **Dashboard**, hiển thị popup chào mừng
+   "Chào mừng quý khách trở lại".
+
+## 5. Alternate & error flows
+
+| # | Điều kiện | Kết quả mong đợi |
+|---|---|---|
+| 5.1 | Sai tên đăng nhập hoặc mật khẩu | Hiển thị **hộp thoại (modal)** với tiêu đề "Tài khoản không hợp lệ" và nút "Đóng". Sau khi đóng, **quay về màn hình giới thiệu**. |
+| 5.2 | Mất kết nối mạng | Toast "Không có kết nối mạng". |
+
+## 6. Acceptance criteria
+
+- [ ] AC-1: Đăng nhập đúng thông tin → vào Dashboard và thấy popup chào mừng.
+- [ ] AC-2: Sai mật khẩu → hiện modal "Tài khoản không hợp lệ", quay về màn
+      hình giới thiệu.
+- [ ] AC-3: Tuỳ chọn "Ghi nhớ đăng nhập" giữ được phiên sau khi tắt app.
+"""
+
+VARIANTS["a-docs"] = {
+    ".agentqa/memory/index.md": SCAFFOLD_INDEX,
+    ".agentqa/config.yml": CONFIG_WITH_DOCS,
+    "docs/product/login-flow.md": SPEC_ACCURATE,
+}
+
+VARIANTS["a-docs-conflict"] = {
+    ".agentqa/memory/index.md": SCAFFOLD_INDEX,
+    ".agentqa/config.yml": CONFIG_WITH_DOCS,
+    "docs/product/login-flow.md": SPEC_CONFLICT,
 }
 
 

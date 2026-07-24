@@ -212,6 +212,35 @@ The store is plain Markdown — read, grep, and prune it directly, or point
 basic-memory's semantic search at it. The full store schema lives in
 [`memory-model.md`](skills/agentqa-write-test/references/memory-model.md).
 
+### The intent layer (optional)
+
+Most of what a test needs is discoverable: the code says how navigation works, the
+live app says what's on screen. The one thing neither can tell you is **what should
+count as passing** — which is why the skill asks about success, failure, and
+blockers on every run.
+
+Teams often already answered that, in an SRD, a PM scenario, a user-flow doc. Point
+`docs:` in `.agentqa/config.yml` at those files (local paths/globs) and
+`agentqa-write-test` will read them to **pre-fill its clarify round** — proposing
+"the spec says success is landing on the home tab bar; still right?" instead of
+asking you to retype what you already wrote — and to **aim its exploration**.
+
+They are **intent, not truth**, and that distinction is the whole design:
+
+- A spec describes what the app was *meant* to do. It goes stale, it gets
+  overtaken by a build. So it ranks *below* the source code, which the skill
+  already treats as unreliable. Trust order: **live hierarchy > memory > code > docs.**
+- Docs **never skip a clarify question** — they change its form from blank to
+  confirm-or-correct. You still decide what the test must prove.
+- A claim read from a doc but never seen live stays in the session's scratch file
+  and **is deleted with it**. It never enters `flows/`/`screens/`, because that
+  store is what later runs trust as a map.
+- When a doc and the build disagree, the build wins — and the skill **tells you
+  about the gap**, which is often the more useful finding.
+- The skill only ever **reads** these files.
+
+No `docs:` block is the normal case, and the skill never asks you for one.
+
 ---
 
 ## Writing good tests
@@ -274,6 +303,10 @@ source of truth for project facts:
   `login_phone_field`, `home_profile_button`) — the logical convention is shared;
   the mechanism is per-platform (iOS `accessibilityIdentifier`, Android
   `contentDescription`/`resource-id`)
+- **`docs:` — product artifacts** *(optional)* — local paths/globs to SRDs, PM
+  scenarios, user flows, acceptance criteria your team already wrote. See
+  [the intent layer](#the-intent-layer-optional) below. Omit it entirely if you
+  have none; everything works exactly as before.
 
 Config holds *structured facts*; `.agentqa/memory/` holds *narrative knowledge*;
 your `CLAUDE.md`/`AGENTS.md` just points at the memory. Facts are never duplicated

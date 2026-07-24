@@ -37,6 +37,22 @@ reset_app_data: always              # always (DEFAULT) = start every launch from
 credentials:
   username_env: APP_TEST_USERNAME   # env var NAMES only — never values
 
+# --- Product artifacts (OPTIONAL) -------------------------------------------
+# Specs, PM scenarios, user flows, acceptance criteria your team already wrote.
+# They describe INTENT — what the app is *meant* to do — which is the one thing
+# neither the source code nor the live app can tell you. The skill reads them to
+# pre-fill the clarify round and to aim exploration; it never writes to them, and
+# it never lets them override what the live hierarchy actually shows.
+#
+# Local paths / globs only, relative to the repo root. Omit this block entirely
+# if your team doesn't keep such docs — the skill behaves exactly as it did
+# without it. Partial or stale docs are fine: they are treated as claims to
+# verify, not as truth.
+# docs:
+#   - docs/specs/**/*.md
+#   - docs/product/user-flows.md
+#   - PRODUCT.md
+
 identifier_convention: screen_element_type   # e.g. login_phone_field, home_profile_button
                                     # The logical name convention is shared; the
                                     # mechanism differs by platform — iOS sets

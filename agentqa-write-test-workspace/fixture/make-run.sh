@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# make-run.sh <variant a|b|c> <run root>
+# make-run.sh <variant a|b|c|a-docs|a-docs-conflict> <run root>
 #
 # Assembles one isolated eval run:
 #   <run root>/repo/        the mock app repo the agent works in (clean — no eval scaffolding)

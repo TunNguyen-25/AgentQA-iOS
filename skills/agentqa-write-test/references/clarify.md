@@ -5,9 +5,10 @@ brainstorming**: with the source code as a white-box tool and the live app as a
 black-box tool, almost everything is discoverable. The human's time is spent on
 the one thing neither can tell you — what "pass" means.
 
-**Order matters.** Map the code (CodeGraph) and recall memory *first*, then ask.
-A question you could have answered from the screen graph is a question you don't
-get to ask.
+**Order matters.** Map the code (CodeGraph), recall memory, and read any `docs:`
+artifacts *first*, then ask. A question you could have answered from the screen
+graph is a question you don't get to ask — and one the team already answered in
+writing is a question you should be *confirming*, not posing blank.
 
 **One batched round.** Use `AskUserQuestion` with structured options where the
 answers are enumerable (environment, objective), free-text otherwise. Don't
@@ -25,6 +26,14 @@ them together.
 
 Never inferred, never skipped "because the request was clear". They are asked
 together, in the same batched round.
+
+**If `docs:` artifacts answered one, ask it as a confirmation.** An SRD or PM
+scenario is a written answer to exactly these questions, so quote it back — "the
+spec says success is landing on the home tab bar; still right?" — rather than
+asking someone to retype what they already wrote. This is a change of *form*, not
+of coverage: all three are still put to the user every run, because a doc can be
+months stale and only they know what this test must prove today. Silent artifacts →
+ask normally. A doc never removes a question.
 
 > **1. When does this test succeed?** — what is the expected user outcome?
 
@@ -95,6 +104,13 @@ updated: <YYYY-MM-DD>
 
 ## Environment / preconditions
 <environment, objective, preconditions as answered or sourced>
+
+## From product docs (unverified)
+<only when `docs:` artifacts were read — each claim you took from them that you
+have NOT yet seen live, one per line, with its source file. Exploration either
+confirms each (then it can be captured as an observation you witnessed) or
+contradicts it (then say so to the user). Anything still unconfirmed here when
+the session ends dies with this file — it never reaches `flows/` or `screens/`.>
 ```
 
 It is the Working-layer artifact steps 3–8 check themselves against — the
@@ -110,9 +126,9 @@ is genuinely missing or looks stale.
 
 | Question | Examples | Usual source if not asked |
 |---|---|---|
-| **Which environment?** | production, staging, dev, mock backend, local | `config.yml`, `env.md` |
-| **What's the testing objective?** | happy path, regression, exploratory, accessibility, performance, security | the user's request wording |
-| **Any required preconditions?** | already logged in, premium account, verified account, feature flag on, specific test data | `env.md`, credential env-var names in `config.yml` |
+| **Which environment?** | production, staging, dev, mock backend, local | `config.yml`, `env.md`, `docs:` artifacts |
+| **What's the testing objective?** | happy path, regression, exploratory, accessibility, performance, security | the user's request wording, `docs:` artifacts |
+| **Any required preconditions?** | already logged in, premium account, verified account, feature flag on, specific test data | `env.md`, credential env-var names in `config.yml`, `docs:` artifacts |
 
 ## Optional — ask when cheap, skip when the user is terse
 
@@ -166,3 +182,5 @@ look.
 - Asking which entry point to use without first naming the ones you found
 - Starting to write a test with no confirmed one-sentence outcome
 - No `.session-requirement.md` written — or one still there after the session
+- Letting a `docs:` artifact *answer* a required question instead of confirming
+  it with the user — the form relaxes, the coverage never does

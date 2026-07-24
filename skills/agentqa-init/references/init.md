@@ -37,6 +37,17 @@ test suite. Idempotent — if pieces exist, keep them and fill only the gaps.
   across platforms; the **mechanism** differs (iOS `accessibilityIdentifier`;
   Android `contentDescription` or a `testTag` exposed as `resource-id`) and is
   the `agentqa-write-test` skill's job — see its `references/android.md`.
+- **Product artifacts (optional).** SRDs, PM scenarios, user flows, acceptance
+  criteria the team already wrote. `agentqa-write-test` reads them to pre-fill its
+  clarify round and aim exploration — they describe *intent*, which is the one
+  thing neither the code nor the live app can supply. **Detect, don't
+  interrogate:** glob the usual homes (`docs/`, `doc/`, `documentation/`,
+  `specs/`, and root files like `PRODUCT.md`, `SPEC.md`, `REQUIREMENTS.md`), show
+  the user what you found, and let them confirm, narrow, or add paths. Found
+  nothing? Leave the `docs:` block commented out and move on without dwelling —
+  plenty of teams keep no such docs, or keep them somewhere the agent can't read,
+  and the skill is fully functional without them. Never block init on this, and
+  never record a path that isn't a local file or glob.
 
 ## 2. Write the config
 
