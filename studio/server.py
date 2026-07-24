@@ -83,19 +83,27 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
 
         def do_POST(self):
             u = urlparse(self.path)
-            if u.path == "/api/run":
-                length = int(self.headers.get("Content-Length", 0))
-                payload = json.loads(self.rfile.read(length) or b"{}")
-                s = summary()
-                target = payload.get("target", "all")
-                valid = ["all"] + runner.list_tests(repo_root, s["test_dir"])
-                if target not in valid:
-                    return self._json({"error": "unknown test target: %s" % target}, 400)
-                rid = run_mgr.start(
-                    repo_root, s["test_dir"], target, payload.get("env", {}),
-                )
-                return self._json({"run_id": rid})
-            return self._json({"error": "not found"}, 404)
+            try:
+                if u.path == "/api/run":
+                    length = int(self.headers.get("Content-Length", 0) or 0)
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    if not isinstance(payload, dict):
+                        return self._json({"error": "body must be a JSON object"}, 400)
+                    s = summary()
+                    target = payload.get("target", "all")
+                    valid = ["all"] + runner.list_tests(repo_root, s["test_dir"])
+                    if target not in valid:
+                        return self._json({"error": "unknown test target: %s" % target}, 400)
+                    rid = run_mgr.start(
+                        repo_root, s["test_dir"], target, payload.get("env", {}),
+                    )
+                    return self._json({"run_id": rid})
+                return self._json({"error": "not found"}, 404)
+            except FileNotFoundError as e:
+                return self._json({"error": "config missing: %s" % e}, 500)
+            except ValueError as e:
+                # covers int(Content-Length) and json.loads (JSONDecodeError ⊂ ValueError)
+                return self._json({"error": str(e)}, 400)
 
         def _sse(self, run_id):
             self.send_response(200)
@@ -106,7 +114,9 @@ def make_server(repo_root: Path, memory_scripts: Optional[Path] = None,
                 for line in run_mgr.lines(run_id):
                     self.wfile.write(("data: %s\n\n" % line).encode())
                     self.wfile.flush()
-            except (BrokenPipeError, KeyError):
+            except OSError:
+                # client disconnected (tab closed / navigated away): BrokenPipeError
+                # and ConnectionResetError are both OSError subclasses.
                 return
 
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)

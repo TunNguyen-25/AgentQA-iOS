@@ -76,3 +76,42 @@ def test_run_rejects_unknown_target(live_server):
         assert False, "expected HTTP 400"
     except urllib.error.HTTPError as e:
         assert e.code == 400
+
+
+def test_post_malformed_body_returns_400(live_server):
+    import urllib.request
+    import urllib.error
+    req = urllib.request.Request(
+        live_server + "/api/run", method="POST",
+        data=b"not json", headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        assert False, "expected HTTP 400"
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+
+
+def test_post_missing_config_returns_500(tmp_path):
+    import json as _json
+    import urllib.request
+    import urllib.error
+    from threading import Thread
+    from studio.server import make_server
+    # tmp_path has NO .agentqa/config.yml
+    srv = make_server(tmp_path, memory_scripts=None, port=0)
+    Thread(target=srv.serve_forever, daemon=True).start()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        req = urllib.request.Request(
+            base + "/api/run", method="POST",
+            data=_json.dumps({"target": "all"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req, timeout=5)
+            assert False, "expected HTTP 500"
+        except urllib.error.HTTPError as e:
+            assert e.code == 500
+    finally:
+        srv.shutdown()
