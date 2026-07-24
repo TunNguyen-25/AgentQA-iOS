@@ -218,10 +218,13 @@ diagnosing a failure (parsing `page_source` XML, matching it against the
 `failures/` library, recommending a fix), writing/refreshing memory — runs
 inline in the main agent's own context.
 
-The store is plain Markdown; read, grep, and prune it directly. The schema has
-exactly one home:
-[`memory-model.md`](skills/agentqa-write-test/references/memory-model.md) — every
-other document points there instead of repeating it.
+The store is plain Markdown; read, grep, and prune it directly.
+
+- **[`docs/memory.md`](docs/memory.md)** — how the layers fit together and how
+  recall works, in plain terms. Start here.
+- **[`memory-model.md`](skills/agentqa-write-test/references/memory-model.md)** —
+  the schema. It has exactly one home; every other document points there instead
+  of repeating it.
 
 ### The intent layer (optional)
 
