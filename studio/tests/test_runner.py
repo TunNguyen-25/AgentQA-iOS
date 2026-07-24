@@ -55,3 +55,29 @@ def test_find_artifacts(tmp_path):
     assert "failed_test_login" in by_name
     assert by_name["failed_test_login"]["png"].endswith("failed_test_login.png")
     assert "png" not in by_name["failed_test_checkout"]
+
+
+def test_env_passthrough(tmp_path):
+    _mk_tests(tmp_path)
+    mgr = runner.RunManager()
+    mgr._cmd_override = [sys.executable, "-c",
+                         "import os; print(os.environ.get('STUDIO_FOO', 'MISSING'))"]
+    rid = mgr.start(tmp_path, "AutomationTests", "all", {"STUDIO_FOO": "bar123"})
+    collected = list(mgr.lines(rid))
+    assert "bar123" in collected
+
+
+def test_lines_second_consumer_does_not_hang(tmp_path):
+    _mk_tests(tmp_path)
+    mgr = runner.RunManager()
+    mgr._cmd_override = [sys.executable, "-c", "print('once')"]
+    rid = mgr.start(tmp_path, "AutomationTests", "all", {})
+    first = list(mgr.lines(rid))
+    assert first[-1].startswith("__END__:")
+    second = list(mgr.lines(rid))          # must return promptly, not hang
+    assert second and second[-1].startswith("__END__:")
+
+
+def test_lines_unknown_run_id():
+    mgr = runner.RunManager()
+    assert list(mgr.lines("nope")) == ["__END__:unknown"]
