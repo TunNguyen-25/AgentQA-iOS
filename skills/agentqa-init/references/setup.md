@@ -32,8 +32,7 @@ PASS-with-note, not a failure):
 | `install-appium.sh` | Appium server 2.x + the pinned driver(s): `xcuitest` (iOS) and/or `uiautomator2` (Android) |
 | `install-agent-device.sh` | agent-device CLI (drives both iOS sims and Android emulators/devices) |
 | `install-codegraph.sh` | CodeGraph CLI (its MCP is registered by the manifest step) |
-| `install-basic-memory.sh` | basic-memory MCP (indexes `.agentqa/memory/`) |
-| `register-mcp.sh` | Write `.agentqa/mcp.json`; register a basic-memory project; register with Claude or print per-harness placement |
+| `register-mcp.sh` | Write `.agentqa/mcp.json`; register with Claude or print per-harness placement |
 | `setup-python-env.sh` | Project venv + requirements |
 
 **Android note:** the SDK itself is a human install (Android Studio, or
@@ -43,7 +42,7 @@ missing — the same way the Xcode/Node preflight does for iOS.
 
 ## MCP servers & the portable manifest
 
-Three MCP servers — `codegraph`, `basic-memory`, `appium` — are defined once in
+Two MCP servers — `codegraph` and `appium` — are defined once in
 `.agentqa/mcp.json` at the host repo root (committed, fully portable). On **Claude
 Code**, `register-mcp.sh` registers them automatically (`claude mcp add`). On **any
 other harness**, it prints the manifest plus where that harness reads MCP config
@@ -51,12 +50,13 @@ other harness**, it prints the manifest plus where that harness reads MCP config
 *running* Appium server at session time (`remoteServerUrl`, e.g.
 `http://127.0.0.1:4723`), so start Appium before using it.
 
+Behavioral memory needs no server: `.agentqa/memory/` is plain Markdown that
+`agentqa-write-test`'s own scripts read, scope, and validate. Both MCP servers here
+are repo-agnostic, so Claude Code's user-scope registration is fine however many
+app repos share a machine.
+
 Notes:
 - Each script is idempotent and runnable alone with `--check`.
-- On Claude Code the MCP servers register at **user scope**, so `basic-memory`'s
-  default project assumes **one app repo per machine**. For several repos on one
-  machine, register `basic-memory` per-repo (project scope) — a planned
-  enhancement; `codegraph`/`appium` are repo-agnostic and unaffected.
 - The Python step needs the project initialized first (`/agentqa-init init`); from
   outside the app repo, set `AGENTQA_PROJECT_ROOT`.
 - Never run CPU-heavy jobs (e.g. `codegraph init`) concurrently with device

@@ -4,7 +4,7 @@ description: Turn a natural-language test-case idea into a reviewed, passing App
 license: MIT
 compatibility: iOS (macOS + Xcode + a simulator) or Android (Android SDK + an emulator/device + a JDK); needs the toolchain from /agentqa-init setup and a project configured by /agentqa-init init
 metadata:
-  agentqa-write-test-version: "1.2.0"
+  agentqa-write-test-version: "1.3.0"
 ---
 
 # agentqa-write-test — idea → identifiers → Appium test
@@ -84,10 +84,23 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
    grep for the flow's screens and terms and read around the hits. No `docs:`
    block, nothing matching this flow, or a path that no longer resolves? Move on
    without comment; most repos have no such docs and the flow is unchanged.
-1. **Recall** — load `.agentqa/memory/index.md` (falls back to
-   `flows/<flow>.md` + linked `screens/*` + the `failures/` library until the
-   compact index exists; schema:
-   [references/memory-model.md](references/memory-model.md)).
+1. **Recall — this flow's slice, not the whole store.** `index.md` is generated
+   and gitignored, so rebuild it, then read only what this flow needs:
+
+   ```bash
+   python3 scripts/memory-index.py .agentqa/memory                 # rebuild the index
+   python3 scripts/memory-index.py .agentqa/memory --flow <flow>   # this flow's slice
+   python3 scripts/memory-index.py .agentqa/memory --stale         # what needs re-verifying
+   ```
+
+   Read the detail notes the slice names. Loading the whole store instead is
+   fine at ten notes and quietly ruinous at two hundred — the point of the tag
+   scoping is that a mature store costs a run no more than a young one. Nothing
+   matched? That's a new flow, not an error: there's nothing to verify-delta
+   against, so explore it from scratch. The `--stale` list is the identifiers
+   whose verification has aged out — you'll be standing on those screens in step
+   3 anyway, so confirm them there rather than trusting the date. Schema:
+   [references/memory-model.md](references/memory-model.md).
 2. **Clarify success, failure, and blockers** — do NOT open-ended brainstorm.
    Follow [references/clarify.md](references/clarify.md): one batched round.
    **Three questions are always asked, every run, never inferred:** what does
@@ -169,22 +182,33 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
 
    Write to `.agentqa/memory/` before moving to step 4: create/refresh each
    note's frontmatter, then add every observation through
-   `scripts/memory-write.py` (`propose` → `apply --op ADD|UPDATE|DELETE|NOOP`) so
-   dedup is enforced, not eyeballed:
+   `scripts/memory-write.py` (`propose` → `apply --op ADD|UPDATE|DELETE|NOOP`).
+   Read the three lines `propose` prints rather than just the score — the ranking
+   is textual, so it catches restatements and misses the same fact worded
+   differently. Full schema:
+   [references/memory-model.md](references/memory-model.md).
    - `flows/<flow>.md`: `[flow-step]` nav path, `[assertion]`, `[edge-case]`s,
-     `[native]`/`[web]` per step; `used-by`/`covers` relations to screens touched.
+     `[native]`/`[web]` per step.
    - `screens/<screen>.md` per screen: `[native]`/`[web]`, `[quirk]`s, and any
      observed identifier as `[identifier] <name> → <file/symbol>;
      added-unverified <today> #<flow>`.
+   - **Tag every observation with its flow** (`#login`). The tag is the only
+     thing tying a screen note to the flows that traverse it, so an untagged
+     observation is in the store but invisible to the next run's scoped Recall —
+     it may as well not have been written. A screen three flows pass through
+     carries all three tags.
    - Write terse notes (facts, not narration); one-line `summary:` in
-     frontmatter. Then run `python3 scripts/memory-index.py .agentqa/memory` to
-     refresh `index.md`.
+     frontmatter. Then rebuild and check:
+     `python3 scripts/memory-index.py .agentqa/memory` and
+     `python3 scripts/memory-lint.py .agentqa/memory`.
    - **Only what you observed live goes in.** A claim you read in an artifact and
      never saw in the hierarchy stays in `.session-requirement.md` and dies with
      the session. `flows/`, `screens/`, and `failures/` are the store later runs
      trust as a map — an unverified doc claim in there is indistinguishable from a
      fact you earned by driving the app, and it would mislead every run after this
-     one.
+     one. (`memory-write.py` refuses to write to the session files or the
+     generated index, so the mechanical half of this is handled; the judgement
+     half is yours.)
 4. **Add accessibility identifiers** — strictly additive app-code changes per the
    config's `identifier_convention`; never behavior, layout, or logic. The
    **mechanism is platform-specific**: iOS sets `accessibilityIdentifier`;
@@ -231,7 +255,11 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
 9. **Capture** — dedup/refresh memory via `scripts/memory-write.py` (propose →
    apply; see [references/memory-model.md](references/memory-model.md)) and record
    test-writing lessons; rebuild the index with
-   `python3 scripts/memory-index.py .agentqa/memory`; delete **both** Working-layer
+   `python3 scripts/memory-index.py .agentqa/memory` and validate the store with
+   `python3 scripts/memory-lint.py .agentqa/memory` (it catches the quiet
+   corruptions — a note with no `summary:`, a mistyped category, an untagged
+   observation — that leave the store looking healthy while answering nothing);
+   delete **both** Working-layer
    files — `.agentqa/memory/.run-checkpoint.md` and
    `.agentqa/memory/.session-requirement.md` — the session is over and they are
    never carried into the next one; re-index CodeGraph (never while tests are
@@ -242,6 +270,13 @@ Behavioral knowledge lives in `.agentqa/memory/` — schema:
 exploration notes (step 3), identifier verification-status updates (step 6),
 test-outcome notes (step 8/9), and failure signatures (green loop). No hand-off,
 no sub-agents anywhere in this skill.
+
+**The store is markdown, and only four places in it are yours to write:**
+`flows/`, `screens/`, `failures/`, `env.md`. `index.md` is regenerated (edits
+there vanish on the next rebuild) and the two dotfiles are this session's scratch
+state (writes there leak unverified claims into what later runs trust).
+`memory-write.py` enforces the boundary, so you'll get a clear refusal rather
+than a silent loss.
 
 ## The green loop (step 8, and any bare "run the tests" request)
 
@@ -302,9 +337,12 @@ match a `failures/` signature (CPU-load WDA timeout; stale state from an
 aborted run).
 
 Write the signature to `.agentqa/memory/failures/<signature>.md` (`[symptom]`,
-`[cause]`, `[remedy]`) via `scripts/memory-write.py` (`propose` → `apply`,
-`--op UPDATE` to refresh an existing signature instead of duplicating), then
-`python3 scripts/memory-index.py .agentqa/memory` to refresh `index.md`.
+`[cause]`, `[remedy]`, each tagged `#<flow>`) via `scripts/memory-write.py`
+(`propose` → `apply`, `--op UPDATE` to refresh an existing signature instead of
+duplicating), then `python3 scripts/memory-index.py .agentqa/memory` to refresh
+`index.md`. Failure notes are recalled by *every* flow, not just this one — the
+signature library is deliberately cross-flow, because the same WDA timeout ruins
+checkout and login alike.
 
 **Act:** anything crossing into app code or a rebuild goes back through steps
 4–6 and their human checkpoints. **A known phantom with a recorded remedy →
@@ -326,6 +364,10 @@ pass; if it doesn't, escalate as possibly-real and stop.**
 | "The screenshot shows the keyboard, so tap its Go key" | Appium types without the keyboard up; the page's own submit button sat under it. Trust the live hierarchy over screenshots. |
 | "The locator fails, I'll match by fuzzy label" | If your identifier is missing, fix its placement in app code, not the locator. |
 | "Memory says it's native, so skip exploring" | Memory is a claim; verify-delta against the live hierarchy. The build may have changed. |
+| "I'll just load the whole memory index, it's small" | It's small *today*. Scoped recall is what keeps run N+100 as cheap as run 1 — `--flow <flow>`, then the notes it names. |
+| "The tag is obvious from the filename, skip it" | Scoped recall matches on `#<flow>`. An untagged observation is stored and unfindable — the worst of both. |
+| "I'll fix up index.md by hand" | It's generated from the notes and gitignored. Edit the note; rebuild the index. |
+| "This identifier is 40 days old but it was fine last time" | `--stale` is telling you nobody has looked since. You're on that screen in step 3 anyway — look. |
 | "I'll seed the flow note from the code" | Only facts grounded in the live hierarchy belong in memory. Explore, then write. |
 | "I'll write a quick Appium/pytest script to poke around the app" | That's step 7's job. Exploring means driving `agent-device` directly — a script at this point is a test written before you know what to assert. |
 | "I'll just read page_source via the Appium MCP while exploring" | Step 3 is agent-device only; Appium enters at step 6. `agent-device snapshot` already gives you the live hierarchy. |
@@ -350,6 +392,8 @@ pass; if it doesn't, escalate as possibly-real and stop.**
 - Writing a test for a screen you never saw in the live hierarchy
 - A Working-layer file (`.run-checkpoint.md`, `.session-requirement.md`) left
   behind after the session ends
+- An observation captured with no `#<flow>` tag, or `memory-lint.py` left failing
+- A hand-edit to `index.md`, or `index.md` staged for commit
 - Dismissing a system permission prompt or pop-up without asking the user first
 - A system view observed in step 3 that the test never handles in setup
 - Entering the flow through an entry point the user never picked, when step 0

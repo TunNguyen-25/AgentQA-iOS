@@ -91,8 +91,12 @@ this skill:
 scripts/scaffold-memory.sh            # from the host repo root
 ```
 
-It creates `flows/`, `screens/`, `failures/` and seeds `env.md` + a fallback
-`README.md`. The store **starts empty** — `/agentqa-write-test` fills `screens/` with
+It creates `flows/`, `screens/`, `failures/`, seeds `env.md` + a fallback
+`README.md`, and gitignores `index.md` (that file is generated from the notes by
+`agentqa-write-test`'s `memory-index.py`, so committing it only produces merge
+conflicts on a file nobody edits). Re-running on a store from an older version
+adds the ignore line and, if `index.md` was already committed, prints the one-time
+`git rm --cached` to untrack it. The store **starts empty** — `/agentqa-write-test` fills `screens/` with
 runtime-verified facts as flows are actually explored, so every note is grounded
 in `page_source`. Never pre-seed `screens/` from the CodeGraph index: those
 claims are unverified and a real build can contradict them (feature flags, web
@@ -132,4 +136,7 @@ a flaky test nobody traces back to here. If a caller genuinely does not mind,
 
 `scripts/setup-all.sh --check` should end all green, and
 `pytest --collect-only` inside the test dir should succeed (0 tests is fine).
-- `scripts/scaffold-memory.sh --check` should print `memory scaffold: OK`.
+- `scripts/scaffold-memory.sh --check` should print `memory scaffold: OK`
+  followed by `memory lint: OK` — it runs `agentqa-write-test`'s `memory-lint.py`
+  over the store, because a structurally complete store can still be full of
+  notes Recall can't use.

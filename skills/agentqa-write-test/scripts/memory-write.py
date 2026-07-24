@@ -9,6 +9,14 @@
 
 `propose` prints the top-3 most-similar existing observations so the caller can
 consciously choose ADD/UPDATE/DELETE/NOOP; writing is only possible via `apply`.
+Similarity is textual, so it catches near-identical restatements and misses the
+same fact worded differently — read the three lines, don't just take the score.
+
+Reads and writes stay inside the persistent store (flows/, screens/, failures/,
+env.md). The generated index and the two session dotfiles are refused: an edit to
+the first is erased on the next rebuild, and an edit to the second would put a
+claim nobody verified where later runs read it as fact.
+
 UPDATE/DELETE require the memory store to be under git, so a wrong edit is one
 `git checkout HEAD -- .agentqa/memory` away; they refuse only on unresolved merge
 conflicts, which a revert would discard. Accumulated edits from the same session
@@ -17,26 +25,15 @@ are fine — one checkout undoes the whole batch. Paths resolve under --memory-d
 """
 import argparse
 import difflib
-import re
 import subprocess
 import sys
 from pathlib import Path
 
-OBS_RE = re.compile(r"^- \[([^\]]+)\]\s*(.*)$")
-OBS_HEADER = "## Observations"
-
-
-def parse_obs(line):
-    m = OBS_RE.match(line.rstrip("\n"))
-    return (m.group(1), m.group(2)) if m else None
-
-
-def iter_observations(memory_dir):
-    for p in sorted(Path(memory_dir).rglob("*.md")):
-        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
-            parsed = parse_obs(line)
-            if parsed:
-                yield p, i, parsed[0], parsed[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from memory_common import (  # noqa: E402
+    CATEGORIES, IDENTIFIER_RE, ID_STATUSES, OBS_HEADER, MemoryPathError,
+    iter_observations, resolve_persistent, secret_findings,
+)
 
 
 def _key(category, text):
@@ -54,16 +51,44 @@ def rank_similar(memory_dir, category, text, k=3):
 
 
 def resolve_note(memory_dir, note):
-    note = note if note.endswith(".md") else note + ".md"
-    p = Path(note)
-    return p if p.is_absolute() else Path(memory_dir) / note
+    return resolve_persistent(memory_dir, note)
 
 
 def parse_target(memory_dir, target):
     if ":" not in target:
         raise ValueError(f"--target must be file:line, got {target!r}")
     file_part, line_part = target.rsplit(":", 1)
-    return resolve_note(memory_dir, file_part), int(line_part)
+    return resolve_persistent(memory_dir, file_part), int(line_part)
+
+
+def validate_observation(category, text):
+    """Reasons this observation must not be written, as a list of strings.
+
+    Both checks guard against damage that shows up much later: a mistyped
+    category is a fact that quietly drops out of every query built on the
+    schema, and a literal credential in a committed, team-shared store is in git
+    history from the moment it lands.
+    """
+    problems = []
+    if category not in CATEGORIES:
+        problems.append(
+            f"unknown category [{category}] — use one of: "
+            + ", ".join(sorted(CATEGORIES))
+        )
+    if category == "identifier":
+        m = IDENTIFIER_RE.match(text.strip())
+        if not m:
+            problems.append(
+                "identifier observations must read "
+                "`<name> → <file/symbol>; <status> <YYYY-MM-DD> #<flow>`"
+            )
+        elif m.group("status") not in ID_STATUSES:
+            problems.append(
+                f"unknown identifier status {m.group('status')!r} — use "
+                + " or ".join(sorted(ID_STATUSES))
+            )
+    problems += [msg for sev, msg in secret_findings(text) if sev == "error"]
+    return problems
 
 
 def add_observation(note_path, category, text):
@@ -152,13 +177,18 @@ REINDEX_HINT = ("→ run `python3 <skill>/scripts/memory-index.py {d}` "
 
 
 def _rel(memory_dir, p):
+    """Store-relative path — what `--target` expects back."""
     try:
-        return str(Path(p).relative_to(Path(memory_dir)))
+        return str(Path(p).resolve().relative_to(Path(memory_dir).resolve()))
     except ValueError:
         return str(p)
 
 
 def cmd_propose(args):
+    try:
+        resolve_persistent(args.memory_dir, args.note)
+    except MemoryPathError as e:
+        sys.exit(f"refusing propose: {e}")
     top = rank_similar(args.memory_dir, args.category, args.text)
     print(f"Top-{len(top)} similar in {args.memory_dir}:")
     if not top:
@@ -201,25 +231,44 @@ def _guard_clean(args, op):
         )
 
 
+def _guard_valid(args, op):
+    problems = validate_observation(args.category, args.text)
+    if problems:
+        sys.exit(f"refusing {op}:\n  " + "\n  ".join(problems))
+
+
 def cmd_apply(args):
     op = args.op
     if op == "NOOP":
         print("NOOP: no write.")
         return 0
-    if op == "ADD":
-        note = resolve_note(args.memory_dir, args.note)
-        line = add_observation(note, args.category, args.text)
-        print(f"ADDED {_rel(args.memory_dir, note)}: {line}")
-    elif op == "UPDATE":
-        _guard_clean(args, op)
-        note, lineno = parse_target(args.memory_dir, args.target)
-        update_line(note, lineno, args.category, args.text)
-        print(f"UPDATED {_rel(args.memory_dir, note)}:{lineno}")
-    elif op == "DELETE":
-        _guard_clean(args, op)
-        note, lineno = parse_target(args.memory_dir, args.target)
-        delete_line(note, lineno)
-        print(f"DELETED {_rel(args.memory_dir, note)}:{lineno}")
+    try:
+        if op == "ADD":
+            _guard_valid(args, op)
+            note = resolve_persistent(args.memory_dir, args.note)
+            line = add_observation(note, args.category, args.text)
+            print(f"ADDED {_rel(args.memory_dir, note)}: {line}")
+        elif op == "UPDATE":
+            # Resolve the target before the git guard, so a refused path fails
+            # on the path rather than on an unrelated warning about the tree.
+            note, lineno = parse_target(args.memory_dir, args.target)
+            _guard_valid(args, op)
+            _guard_clean(args, op)
+            update_line(note, lineno, args.category, args.text)
+            print(f"UPDATED {_rel(args.memory_dir, note)}:{lineno}")
+        elif op == "DELETE":
+            note, lineno = parse_target(args.memory_dir, args.target)
+            _guard_clean(args, op)
+            delete_line(note, lineno)
+            print(f"DELETED {_rel(args.memory_dir, note)}:{lineno}")
+    except MemoryPathError as e:
+        sys.exit(f"refusing {op}: {e}")
+    except IndexError as e:
+        # Line numbers shift as a batch deletes lines, so a target taken from an
+        # earlier `propose` can go stale mid-session. Say so instead of dumping a
+        # traceback at whoever is halfway through refreshing eleven identifiers.
+        sys.exit(f"refusing {op}: {e}\nRe-run `propose` (or `memory-index.py "
+                 f"--stale`) to get the current file:line.")
     print(REINDEX_HINT.format(d=args.memory_dir))
     return 0
 

@@ -67,7 +67,6 @@ run_step "Appium MCP server"                   ./install-appium-mcp.sh $MODE_FLA
 run_step "Appium + platform driver(s)"         ./install-appium.sh $MODE_FLAG $PLATFORM_FLAG
 run_step "agent-device"                        ./install-agent-device.sh $MODE_FLAG
 run_step "CodeGraph CLI"                       ./install-codegraph.sh $MODE_FLAG
-run_step "basic-memory"                        ./install-basic-memory.sh $MODE_FLAG
 run_step "MCP registration"                    ./register-mcp.sh $MODE_FLAG $HARNESS_FLAG
 run_step "Python test environment"             ./setup-python-env.sh $MODE_FLAG
 

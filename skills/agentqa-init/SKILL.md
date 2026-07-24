@@ -1,10 +1,10 @@
 ---
 name: agentqa-init
-description: Install and validate the agent-driven mobile UI testing toolchain (Appium 2.x with the XCUITest and/or UiAutomator2 driver, agent-device, CodeGraph, basic-memory, the Appium MCP, a Python venv), and configure an app repo for it — .agentqa/config.yml, a runnable pytest suite, and an empty behavioral-memory store. Use when setting up the machine or onboarding a repo for automated iOS or Android UI tests. Invoked as /agentqa-init setup or /agentqa-init init. Writing tests is the separate /agentqa-write-test skill.
+description: Install and validate the agent-driven mobile UI testing toolchain (Appium 2.x with the XCUITest and/or UiAutomator2 driver, agent-device, CodeGraph, the Appium MCP, a Python venv), and configure an app repo for it — .agentqa/config.yml, a runnable pytest suite, and an empty behavioral-memory store. Use when setting up the machine or onboarding a repo for automated iOS or Android UI tests. Invoked as /agentqa-init setup or /agentqa-init init. Writing tests is the separate /agentqa-write-test skill.
 license: MIT
 compatibility: iOS needs macOS with Xcode + an iOS simulator; Android needs the Android SDK (adb, an emulator or device) + a JDK, on macOS or Linux. Both need Node.js and Python 3.9+; npm network access for installs.
 metadata:
-  agentqa-init-version: "1.2.0"
+  agentqa-init-version: "1.3.0"
 ---
 
 # agentqa-init — toolchain setup & project configuration
@@ -52,9 +52,10 @@ through the env vars named in the config.
 
 Behavioral knowledge lives in `.agentqa/memory/`, scaffolded empty by `init`
 (`scripts/scaffold-memory.sh`). The note **schema** belongs to the
-`agentqa-write-test` skill (`references/memory-model.md` there) because that's
-what fills the store; `init` only creates the folders and seeds `env.md`. Never
-pre-seed notes here — memory holds runtime-verified facts only.
+`agentqa-write-test` skill (`references/memory-model.md` there — the single source
+of truth for it) because that's what fills the store; `init` only creates the
+folders and seeds `env.md`. Never pre-seed notes here — memory holds
+runtime-verified facts only.
 
 ## Build policy (record it, respect it)
 

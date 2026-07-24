@@ -151,13 +151,13 @@ so the skills still work (with less automation) when one is missing.
 | **Appium 2.x + the platform driver** | The mobile automation server + the driver for your platform: **XCUITest** for iOS (WebDriverAgent under the hood) or **UiAutomator2** for Android (`adb`). `setup` installs whichever the platform scope needs. | The actual engine your generated pytest tests drive the app through, and the source of `page_source` — the one source of truth. |
 | **agent-device** | A cross-platform CLI that is the agent's "hands" on the device (`open`, `snapshot -i`, `press`/`fill --settle`, `screenshot`) — drives iOS simulators and Android emulators/devices alike. | Lets the agent **explore the real app** before writing a test — walking the flow, reading the live view hierarchy, and seeing what actually renders (native vs. web). |
 | **CodeGraph** | A codebase index + query MCP (call chains, blast radius). |  Helps the agent map a flow to the screens/symbols in your source and see what a change touches — *before* it edits, so identifier additions stay surgical. |
-| **basic-memory** *(MCP)* | A local knowledge-graph server backed by plain Markdown files. | Indexes `.agentqa/memory/` so the agent can recall and semantically search what it has learned about your app (see [How the agent remembers](#how-the-agent-remembers)). |
 | **Appium MCP** (`appium-mcp`) | An MCP server that talks to a running Appium session. | First-class `page_source` and identifier-verification reads while writing/diagnosing a test, instead of shelling out. |
 | **Python venv + pytest** | The test harness (`conftest.py` fixture auto-attaches to the booted device — simulator or emulator — saves `page_source` + a screenshot on any failure, and writes a per-run execution runbook + final screenshot to `artifacts/runbook/` on pass or fail). | Runs the tests and captures failure evidence for diagnosis. |
 
-MCP servers (`codegraph`, `basic-memory`, `appium`) are defined once in a portable
+MCP servers (`codegraph`, `appium`) are defined once in a portable
 `.agentqa/mcp.json`; on Claude Code they auto-register, and on other harnesses
-setup prints where to import them. **Never run a CPU-heavy job (e.g. re-indexing
+setup prints where to import them. Behavioral memory needs no server of its own —
+it's plain Markdown plus three small stdlib scripts. **Never run a CPU-heavy job (e.g. re-indexing
 CodeGraph) while device tests are running** — on iOS WebDriverAgent waits time
 out, and on Android a busy host slows the UiAutomator2 server; both surface as
 phantom failures.
@@ -172,7 +172,9 @@ repo root — committed and team-shared, and containing **no secrets** (only the
 and that source code can't tell you; CodeGraph already regenerates the code-level
 knowledge separately.
 
-Notes are plain Markdown (basic-memory-native), organized by type:
+Notes are plain Markdown — frontmatter plus one fact per line
+(`- [category] fact #flow`). No database, no server, no link graph: the `#flow`
+tag is what ties a screen or a failure to the flows it belongs to.
 
 | Folder / file | One note per | Captures |
 |---|---|---|
@@ -180,37 +182,46 @@ Notes are plain Markdown (basic-memory-native), organized by type:
 | `screens/` | screen | native-or-web, the **identifier map** (logical name → where it's set + when it was last verified), quirks (e.g. "submit button sits under the keyboard") |
 | `failures/` | phantom/flaky signature | symptom → cause → remedy; a shared library across flows |
 | `env.md` | (single file) | build-policy rationale, credential env-var names, device/simulator gotchas |
+| `index.md` | (generated) | compact view rebuilt from the notes — **gitignored**, never hand-edited |
 | `.session-requirement.md` | (ephemeral, per session) | Working layer — what you asked for this session: success criteria, failure criteria, blockers; gitignored, deleted when the session ends |
 | `.run-checkpoint.md` | (ephemeral, per run) | Working layer — the in-flight run's state across the build pause; gitignored, deleted on Capture |
 
-A generated `.agentqa/memory/index.md` (rebuilt by `scripts/memory-index.py` in
-the `agentqa-write-test` skill) is the always-loaded compact entry point; detail
-notes load only when a flow is actively touched.
-
-The lifecycle is four verbs: **Recall** (load the relevant notes before acting) →
+The lifecycle is four verbs: **Recall** (load what this flow needs before acting) →
 **Verify-on-read** (treat memory as a *claim* and re-check it against live
 `page_source`, never blindly trust it) → **Capture** (write deduped observations
 when done) → **Refresh** (update a note when reality has changed, rather than
-appending a contradiction). Capture and Refresh go through `memory-write.py`, which
-shows the closest existing observations and makes the agent choose
-`ADD`/`UPDATE`/`DELETE`/`NOOP` — dedup is enforced, not eyeballed, and destructive
-edits require a clean git tree. On a repeat `/agentqa-write-test`, the agent uses the flow
-note as a **map** and only deep-dives where the app diverges from memory — fast,
-but still grounded in the live app.
+appending a contradiction). On a repeat `/agentqa-write-test`, the agent uses the
+flow note as a **map** and only deep-dives where the app diverges from memory —
+fast, but still grounded in the live app.
 
-The generated index also computes each verified identifier's **staleness** (its age,
-with a `⚠stale` flag past 30 days), so staleness is deterministic and
-the agent knows which identifiers to re-verify. The basic-memory MCP indexes the same
-Markdown for semantic search; the Markdown stays the single source of truth.
+**Recall is scoped to the flow, so a mature store costs no more than a young one.**
+`memory-index.py --flow login` returns the login notes and the (deliberately
+unscoped) failure library, not all two hundred screens you've ever explored.
+
+**Staleness is computed, not declared.** Every verified identifier carries the date
+it was last seen in the hierarchy; `memory-index.py --stale` lists the ones past 30
+days with the exact `file:line` to refresh, so re-verification is a task rather than
+a warning label.
+
+**Capture goes through `memory-write.py`**, which shows the closest existing
+observations and makes the agent choose `ADD`/`UPDATE`/`DELETE`/`NOOP` before
+anything is written. The ranking is textual — it catches restatements and misses
+the same fact worded differently — so it's a forcing function to look, not a
+guarantee. The script also refuses writes that would corrupt the store: paths
+outside `flows/`/`screens/`/`failures/`/`env.md`, unknown categories, malformed
+identifier lines, and anything shaped like a committed credential. `memory-lint.py`
+runs the same checks across the whole store (and `/agentqa-init init --check`
+runs it for you).
 
 **No sub-agents.** Everything — exploring the real app with `agent-device`,
 diagnosing a failure (parsing `page_source` XML, matching it against the
 `failures/` library, recommending a fix), writing/refreshing memory — runs
 inline in the main agent's own context.
 
-The store is plain Markdown — read, grep, and prune it directly, or point
-basic-memory's semantic search at it. The full store schema lives in
-[`memory-model.md`](skills/agentqa-write-test/references/memory-model.md).
+The store is plain Markdown; read, grep, and prune it directly. The schema has
+exactly one home:
+[`memory-model.md`](skills/agentqa-write-test/references/memory-model.md) — every
+other document points there instead of repeating it.
 
 ### The intent layer (optional)
 
@@ -255,8 +266,8 @@ rules below are what keep the generated tests trustworthy.
    (screens, fields, validations, navigation, APIs) it discovers itself: source
    code as the white-box tool, the running app as the black-box one. No
    open-ended brainstorming, one batched round of questions.
-2. **Recall, then explore the real app.** It loads what memory already knows, then
-   drives the flow with agent-device and reconciles against live `page_source` —
+2. **Recall, then explore the real app.** It loads what memory already knows about
+   *this flow*, then drives the flow with agent-device and reconciles against live `page_source` —
    because a real build can replace native login with web SSO, and only the live
    hierarchy is truth.
 3. **Identifiers are added additively.** Accessibility identifiers follow your
@@ -333,8 +344,8 @@ skills/
 │   └── tests/            # scaffold (conftest reset, runbook) tests
 └── agentqa-write-test/   # the test-time flow, self-contained
     ├── SKILL.md          # the 0–9 flow + the green loop (iOS inline, Android delta linked)
-    ├── references/       # clarify.md, memory-model.md (store schema), android.md (platform delta)
-    ├── scripts/          # memory-write.py, memory-index.py
+    ├── references/       # clarify.md, memory-model.md (THE store schema), android.md (platform delta)
+    ├── scripts/          # memory_common.py (schema), memory-write.py, memory-index.py, memory-lint.py
     └── tests/            # memory store tests
 agentqa-write-test-workspace/  # eval harness: mock app repo, PATH shims, graders (dev-only)
 install.sh                # the cross-harness installer (raw-copy, for harnesses without marketplace support)

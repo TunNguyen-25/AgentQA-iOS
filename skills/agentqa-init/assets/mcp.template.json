@@ -5,11 +5,6 @@
       "command": "codegraph",
       "args": ["serve", "--mcp"]
     },
-    "basic-memory": {
-      "type": "stdio",
-      "command": "basic-memory",
-      "args": ["--project=__BM_PROJECT__", "mcp"]
-    },
     "appium": {
       "type": "stdio",
       "command": "npx",

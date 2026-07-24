@@ -12,8 +12,6 @@ UIAUTOMATOR2_DRIVER_PIN="4.2.9"
 AGENT_DEVICE_PIN="0.19.1"         # cross-platform: drives iOS sims AND Android emulators/devices
 CODEGRAPH_PKG="@colbymchenry/codegraph"
 
-# Phase 2 MCP server pins (confirm exact versions at install time; record here).
-BASIC_MEMORY_PIN="0.22.1" # pypi basic-memory; latest, pinned 2026-07-12
 APPIUM_MCP_PIN="1.87.4" # npm appium-mcp; validated 2026-07-12
 
 ok()   { printf '\033[32m✔ %s\033[0m\n' "$*"; }
